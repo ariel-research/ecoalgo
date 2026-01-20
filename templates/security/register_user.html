@@ -10,7 +10,7 @@
                 <h4 class="mb-0">Create Account</h4>
             </div>
             <div class="card-body">
-                <form method="POST" action="{{ url_for('security.register') }}" novalidate>
+                <form method="POST" action="{{ url_for('security.register', next=request.args.get('next')) }}" novalidate>
                     {{ register_user_form.hidden_tag() }}
 
                     <div class="mb-3">
@@ -52,7 +52,7 @@
 
                 <hr>
                 <p class="text-center mb-0">
-                    Already have an account? <a href="{{ url_for('security.login') }}">Login here</a>
+                    Already have an account? <a href="{{ url_for('security.login', next=request.args.get('next')) }}">Login here</a>
                 </p>
             </div>
         </div>

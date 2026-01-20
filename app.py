@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, url_for, flash, request, abort, session, jsonify
+from flask import Flask, render_template, redirect, url_for, flash, request, abort, jsonify
 from flask_security import Security, SQLAlchemyUserDatastore, current_user, auth_required, roles_required, roles_accepted, hash_password
 from flask_wtf.csrf import CSRFProtect
 from config import Config
@@ -615,10 +615,9 @@ def survey_join(invite_code):
     survey = Survey.query.filter_by(invite_code=invite_code).first_or_404()
 
     if not current_user.is_authenticated:
-        # Store the invite code in session and redirect to login
-        session['pending_survey_invite'] = invite_code
+        # Redirect to login with next parameter to return here after auth
         flash('Please log in or register to join this survey.', 'info')
-        return redirect(url_for('security.login'))
+        return redirect(url_for('security.login', next=request.url))
 
     # Check if already a participant
     existing = SurveyParticipant.query.filter_by(survey_id=survey.id, user_id=current_user.id).first()
@@ -633,31 +632,6 @@ def survey_join(invite_code):
 
     flash(f'You have joined the survey "{survey.title}"!', 'success')
     return redirect(url_for('survey_rank', survey_id=survey.id))
-
-
-@app.after_request
-def check_pending_invite(response):
-    """Check if user has a pending survey invite after login."""
-    if current_user.is_authenticated and 'pending_survey_invite' in session:
-        invite_code = session.pop('pending_survey_invite')
-        # We can't redirect here, but we can flash a message
-        # The user will need to click the link again or we handle it in a before_request
-    return response
-
-
-@app.before_request
-def process_pending_invite():
-    """Process pending survey invite after login."""
-    if current_user.is_authenticated and 'pending_survey_invite' in session:
-        invite_code = session.pop('pending_survey_invite')
-        survey = Survey.query.filter_by(invite_code=invite_code).first()
-        if survey:
-            existing = SurveyParticipant.query.filter_by(survey_id=survey.id, user_id=current_user.id).first()
-            if not existing:
-                participant = SurveyParticipant(survey_id=survey.id, user_id=current_user.id)
-                db.session.add(participant)
-                db.session.commit()
-                flash(f'You have been added to the survey "{survey.title}"!', 'success')
 
 
 # ==================== RANKING INTERFACE ====================
