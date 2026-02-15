@@ -855,25 +855,46 @@ def survey_run_algorithm(survey_id):
         # Create fairpyx instance
         instance = Instance(valuations=valuations, item_capacities=item_capacities)
 
-        # Run the selected algorithm
-        if algorithm == 'round_robin':
-            from fairpyx.algorithms.picking_sequence import round_robin
-            allocation = divide(round_robin, instance)
-        elif algorithm == 'bidirectional_round_robin':
-            from fairpyx.algorithms.picking_sequence import bidirectional_round_robin
-            allocation = divide(bidirectional_round_robin, instance)
-        elif algorithm == 'iterated_maximum_matching':
-            from fairpyx.algorithms.iterated_maximum_matching import iterated_maximum_matching
-            allocation = divide(iterated_maximum_matching, instance)
-        elif algorithm == 'utilitarian_matching':
-            from fairpyx.algorithms.utilitarian_matching import utilitarian_matching
-            allocation = divide(utilitarian_matching, instance)
-        elif algorithm == 'serial_dictatorship':
-            from fairpyx.algorithms.picking_sequence import serial_dictatorship
-            allocation = divide(serial_dictatorship, instance)
-        else:
+        # Algorithm registry: map name -> (module, function_name)
+        ALGORITHM_REGISTRY = {
+            # Picking Sequence
+            'round_robin': ('fairpyx.algorithms.picking_sequence', 'round_robin'),
+            'bidirectional_round_robin': ('fairpyx.algorithms.picking_sequence', 'bidirectional_round_robin'),
+            'serial_dictatorship': ('fairpyx.algorithms.picking_sequence', 'serial_dictatorship'),
+            # Matching
+            'utilitarian_matching': ('fairpyx.algorithms.utilitarian_matching', 'utilitarian_matching'),
+            'iterated_maximum_matching': ('fairpyx.algorithms.iterated_maximum_matching', 'iterated_maximum_matching'),
+            'iterated_maximum_matching_adjusted': ('fairpyx.algorithms.iterated_maximum_matching', 'iterated_maximum_matching_adjusted'),
+            'iterated_maximum_matching_unadjusted': ('fairpyx.algorithms.iterated_maximum_matching', 'iterated_maximum_matching_unadjusted'),
+            # Egalitarian
+            'almost_egalitarian_allocation': ('fairpyx.algorithms.almost_egalitarian', 'almost_egalitarian_allocation'),
+            'almost_egalitarian_without_donation': ('fairpyx.algorithms.almost_egalitarian', 'almost_egalitarian_without_donation'),
+            'almost_egalitarian_with_donation': ('fairpyx.algorithms.almost_egalitarian', 'almost_egalitarian_with_donation'),
+            # Fractional Egalitarian
+            'fractional_egalitarian_allocation': ('fairpyx.algorithms.fractional_egalitarian', 'fractional_egalitarian_allocation'),
+            'fractional_egalitarian_utilitarian_allocation': ('fairpyx.algorithms.fractional_egalitarian', 'fractional_egalitarian_utilitarian_allocation'),
+            # Proportionality
+            'maximally_proportional_allocation': ('fairpyx.algorithms.maximally_proportional', 'maximally_proportional_allocation'),
+            # Gale-Shapley
+            'gale_shapley': ('fairpyx.algorithms.Gale_Shapley_pareto_dominant_market_mechanism', 'gale_shapley'),
+            # Optimization-based Mechanisms
+            'OC_function': ('fairpyx.algorithms.Optimization_based_Mechanisms', 'OC_function'),
+            'TTC_function': ('fairpyx.algorithms.Optimization_based_Mechanisms', 'TTC_function'),
+            'TTC_O_function': ('fairpyx.algorithms.Optimization_based_Mechanisms', 'TTC_O_function'),
+            'SP_function': ('fairpyx.algorithms.Optimization_based_Mechanisms', 'SP_function'),
+            'SP_O_function': ('fairpyx.algorithms.Optimization_based_Mechanisms', 'SP_O_function'),
+        }
+
+        if algorithm not in ALGORITHM_REGISTRY:
             flash(f'Unknown algorithm: {algorithm}', 'danger')
             return redirect(url_for('survey_edit', survey_id=survey.id))
+
+        # Dynamic import and run
+        mod_path, func_name = ALGORITHM_REGISTRY[algorithm]
+        import importlib
+        mod = importlib.import_module(mod_path)
+        algo_func = getattr(mod, func_name)
+        allocation = divide(algo_func, instance)
 
         # Convert allocation to JSON-serializable format
         result_data = {
