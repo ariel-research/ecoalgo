@@ -35,7 +35,7 @@
                             <div class="row">
                                 {% if survey.use_weights %}
                                 <div class="col-md-6 mb-3">
-                                    <label for="user_weight" class="form-label">Your Credit Points *</label>
+                                    <label for="user_weight" class="form-label">Your Weight *</label>
                                     <input type="number"
                                            class="form-control"
                                            id="user_weight"
@@ -174,8 +174,9 @@
                 </form>
                 {% endif %}
             </div>
-            <div class="card-footer">
+            <div class="card-footer d-flex justify-content-between">
                 <a href="{{ url_for('my_surveys') }}" class="btn btn-outline-secondary">Back to My Surveys</a>
+                <a href="{{ url_for('survey_my_results', survey_id=survey.id) }}" class="btn btn-outline-primary">My Results</a>
             </div>
         </div>
     </div>

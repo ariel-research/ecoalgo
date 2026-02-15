@@ -211,7 +211,23 @@ def survey_edit(survey_id):
         abort(403)
 
     users = User.query.all()
-    return render_template('survey/edit.html', survey=survey, users=users)
+
+    # Build rating matrix for the rating table
+    items = survey.items.all()
+    participants = survey.participants.all()
+    rating_matrix = []
+    for p in participants:
+        row = {'participant': p, 'ratings': {}}
+        for r in p.rankings.all():
+            if survey.ranking_mode == 'ordinal':
+                row['ratings'][r.item_id] = r.rank
+            elif survey.ranking_mode in ('budget', 'points'):
+                row['ratings'][r.item_id] = r.points
+            else:
+                row['ratings'][r.item_id] = r.rating
+        rating_matrix.append(row)
+
+    return render_template('survey/edit.html', survey=survey, users=users, items=items, rating_matrix=rating_matrix)
 
 
 @app.route('/surveys/<int:survey_id>/update', methods=['POST'])
@@ -326,6 +342,39 @@ def survey_delete_item(survey_id, item_id):
     return redirect(url_for('survey_edit', survey_id=survey.id))
 
 
+@app.route('/surveys/<int:survey_id>/items/<int:item_id>/edit', methods=['POST'])
+@auth_required()
+@roles_accepted('admin', 'moderator')
+def survey_edit_item(survey_id, item_id):
+    """Edit an item in the survey."""
+    survey = Survey.query.get_or_404(survey_id)
+    if survey.creator_id != current_user.id and not current_user.has_role('admin'):
+        abort(403)
+
+    item = SurveyItem.query.get_or_404(item_id)
+    if item.survey_id != survey.id:
+        abort(404)
+
+    # Check if item has rankings and confirmation wasn't given
+    if item.rankings.count() > 0 and not request.form.get('confirm_edit'):
+        flash(f'Item "{item.name}" has existing ratings. Please confirm the edit.', 'warning')
+        return redirect(url_for('survey_edit', survey_id=survey.id))
+
+    name = request.form.get('name')
+    if not name:
+        flash('Item name is required.', 'danger')
+        return redirect(url_for('survey_edit', survey_id=survey.id))
+
+    item.name = name
+    item.description = request.form.get('description', '')
+    item.capacity = request.form.get('capacity', 1, type=int)
+    item.weight = request.form.get('weight', 1.0, type=float)
+
+    db.session.commit()
+    flash(f'Item "{name}" updated successfully.', 'success')
+    return redirect(url_for('survey_edit', survey_id=survey.id))
+
+
 # ==================== SURVEY PARTICIPANTS ====================
 
 @app.route('/surveys/<int:survey_id>/participants/add', methods=['POST'])
@@ -406,6 +455,10 @@ def survey_add_dummy_users(survey_id):
             is_dummy=True,
             dummy_name=dummy_name
         )
+        if survey.use_weights:
+            participant.user_weight = round(random.uniform(0.5, 5.0), 1)
+        if survey.require_user_capacity:
+            participant.user_capacity = random.randint(1, max(1, len(items)))
         db.session.add(participant)
         db.session.flush()  # Get the participant ID
 
@@ -453,6 +506,113 @@ def survey_add_dummy_users(survey_id):
     db.session.commit()
     flash(f'{count} dummy user(s) added with random preferences.', 'success')
     return redirect(url_for('survey_edit', survey_id=survey.id))
+
+
+@app.route('/surveys/<int:survey_id>/dummy-users/remove-all', methods=['POST'])
+@auth_required()
+@roles_accepted('admin', 'moderator')
+def survey_remove_all_dummy_users(survey_id):
+    """Remove all dummy users from the survey."""
+    survey = Survey.query.get_or_404(survey_id)
+    if survey.creator_id != current_user.id and not current_user.has_role('admin'):
+        abort(403)
+
+    dummies = SurveyParticipant.query.filter_by(survey_id=survey.id, is_dummy=True).all()
+    count = len(dummies)
+    for dummy in dummies:
+        db.session.delete(dummy)
+    db.session.commit()
+
+    flash(f'{count} dummy user(s) removed.', 'success')
+    return redirect(url_for('survey_edit', survey_id=survey.id))
+
+
+@app.route('/surveys/<int:survey_id>/dummy-users/regenerate', methods=['POST'])
+@auth_required()
+@roles_accepted('admin', 'moderator')
+def survey_regenerate_dummy_data(survey_id):
+    """Regenerate random ratings for all dummy users."""
+    survey = Survey.query.get_or_404(survey_id)
+    if survey.creator_id != current_user.id and not current_user.has_role('admin'):
+        abort(403)
+
+    items = survey.items.all()
+    if not items:
+        flash('No items in the survey.', 'danger')
+        return redirect(url_for('survey_edit', survey_id=survey.id))
+
+    dummies = SurveyParticipant.query.filter_by(survey_id=survey.id, is_dummy=True).all()
+    for participant in dummies:
+        # Delete existing rankings
+        ItemRanking.query.filter_by(participant_id=participant.id).delete()
+
+        # Generate new random preferences
+        if survey.ranking_mode == 'ordinal':
+            ranks = list(range(1, len(items) + 1))
+            random.shuffle(ranks)
+            for item, rank in zip(items, ranks):
+                db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id, rank=rank))
+        elif survey.ranking_mode == 'budget':
+            remaining = survey.total_points
+            points_list = []
+            for j in range(len(items) - 1):
+                pts = random.randint(0, remaining)
+                points_list.append(pts)
+                remaining -= pts
+            points_list.append(remaining)
+            random.shuffle(points_list)
+            for item, pts in zip(items, points_list):
+                db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id, points=pts))
+        else:
+            for item in items:
+                rating = random.randint(survey.min_score, survey.max_score)
+                db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id, rating=rating))
+
+    db.session.commit()
+    flash(f'Regenerated data for {len(dummies)} dummy user(s).', 'success')
+    return redirect(url_for('survey_edit', survey_id=survey.id))
+
+
+@app.route('/surveys/<int:survey_id>/dummy-users/<int:participant_id>/edit-ratings', methods=['GET', 'POST'])
+@auth_required()
+@roles_accepted('admin', 'moderator')
+def survey_edit_dummy_ratings(survey_id, participant_id):
+    """Edit ratings for a dummy user."""
+    survey = Survey.query.get_or_404(survey_id)
+    if survey.creator_id != current_user.id and not current_user.has_role('admin'):
+        abort(403)
+
+    participant = SurveyParticipant.query.get_or_404(participant_id)
+    if participant.survey_id != survey.id or not participant.is_dummy:
+        abort(404)
+
+    if request.method == 'POST':
+        # Clear existing rankings
+        ItemRanking.query.filter_by(participant_id=participant.id).delete()
+
+        items = survey.items.all()
+        if survey.ranking_mode == 'ordinal':
+            for item in items:
+                rank = request.form.get(f'rank_{item.id}', type=int)
+                if rank:
+                    db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id, rank=rank))
+        elif survey.ranking_mode in ('budget', 'points'):
+            for item in items:
+                points = request.form.get(f'points_{item.id}', 0, type=int)
+                db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id, points=points))
+        else:
+            for item in items:
+                rating = request.form.get(f'rating_{item.id}', type=int)
+                if rating is not None:
+                    db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id, rating=rating))
+
+        db.session.commit()
+        flash(f'Ratings for {participant.dummy_name} updated.', 'success')
+        return redirect(url_for('survey_edit', survey_id=survey.id))
+
+    # GET: show current ratings
+    rankings = {r.item_id: r for r in participant.rankings.all()}
+    return render_template('survey/edit_dummy_ratings.html', survey=survey, participant=participant, rankings=rankings)
 
 
 # ==================== ALGORITHM EXECUTION ====================
@@ -653,11 +813,11 @@ def survey_rank(survey_id):
             flash('This survey is closed for changes.', 'danger')
             return redirect(url_for('survey_rank', survey_id=survey.id))
 
-        # Process user weight (credit points) if weights are enabled
+        # Process user weight if weights are enabled
         if survey.use_weights:
             user_weight = request.form.get('user_weight', type=float)
             if user_weight is None or user_weight <= 0:
-                flash('Please enter a valid weight (credit points).', 'danger')
+                flash('Please enter a valid weight.', 'danger')
                 return redirect(url_for('survey_rank', survey_id=survey.id))
             participant.user_weight = user_weight
 
@@ -725,6 +885,61 @@ def survey_rank(survey_id):
     rankings = {r.item_id: r for r in participant.rankings.all()}
 
     return render_template('survey/rank.html', survey=survey, participant=participant, rankings=rankings)
+
+
+@app.route('/surveys/<int:survey_id>/my-results')
+@auth_required()
+def survey_my_results(survey_id):
+    """View the current user's allocation results for a survey."""
+    survey = Survey.query.get_or_404(survey_id)
+
+    participant = SurveyParticipant.query.filter_by(survey_id=survey.id, user_id=current_user.id).first()
+    if not participant:
+        flash('You are not a participant in this survey.', 'danger')
+        return redirect(url_for('my_surveys'))
+
+    display_name = participant.get_display_name()
+    results = survey.allocation_results.order_by(AllocationResult.created_at.desc()).all()
+
+    # Build user-specific results with explanation
+    user_results = []
+    rankings = {r.item_id: r for r in participant.rankings.all()}
+    items_by_name = {item.name: item for item in survey.items.all()}
+
+    for r in results:
+        data = json.loads(r.result_json) if r.result_json else {}
+        allocation = data.get('allocation', {})
+        my_items = allocation.get(display_name, [])
+
+        # Compute explanation for each allocated item
+        explained_items = []
+        total_value = 0
+        for item_name in my_items:
+            item = items_by_name.get(item_name)
+            if item and item.id in rankings:
+                ranking = rankings[item.id]
+                if survey.ranking_mode == 'ordinal':
+                    value = ranking.rank
+                    label = f'Rank {value}'
+                elif survey.ranking_mode in ('budget', 'points'):
+                    value = ranking.points
+                    label = f'{value} points'
+                else:
+                    value = ranking.rating
+                    label = f'Rating {value}'
+                total_value += value
+                explained_items.append({'name': item_name, 'value': value, 'label': label})
+            else:
+                explained_items.append({'name': item_name, 'value': 0, 'label': 'N/A'})
+
+        user_results.append({
+            'algorithm': r.algorithm,
+            'created_at': r.created_at,
+            'items': explained_items,
+            'total_value': total_value
+        })
+
+    return render_template('survey/my_results.html', survey=survey, participant=participant, user_results=user_results)
 
 
 @app.route('/my-surveys')

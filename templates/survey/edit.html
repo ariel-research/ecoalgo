@@ -74,7 +74,7 @@
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="use_weights" name="use_weights" {{ 'checked' if survey.use_weights }}>
                         <label class="form-check-label" for="use_weights">
-                            Enable Weights (item weights + user credit points)
+                            Enable Weights (item weights + user weights)
                         </label>
                     </div>
                 </div>
@@ -121,17 +121,21 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="row g-2">
                         <div class="col-md-{% if survey.use_weights %}4{% else %}6{% endif %}">
+                            <label class="form-label">Item Name</label>
                             <input type="text" class="form-control" name="name" placeholder="Item name" required>
                         </div>
                         <div class="col-md-{% if survey.use_weights %}3{% else %}4{% endif %}">
+                            <label class="form-label">Capacity</label>
                             <input type="number" class="form-control" name="capacity" placeholder="Capacity" value="1" min="1">
                         </div>
                         {% if survey.use_weights %}
                         <div class="col-md-3">
+                            <label class="form-label">Weight</label>
                             <input type="number" class="form-control" name="weight" placeholder="Weight" value="1.0" min="0" step="0.1">
                         </div>
                         {% endif %}
                         <div class="col-md-2">
+                            <label class="form-label">&nbsp;</label>
                             <button type="submit" class="btn btn-success w-100">Add</button>
                         </div>
                     </div>
@@ -166,10 +170,43 @@
                             {% if survey.use_weights %}
                             <td>{{ item.weight }}</td>
                             {% endif %}
-                            <td>
+                            <td class="text-nowrap">
+                                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#edit-item-{{ item.id }}">Edit</button>
                                 <form method="POST" action="{{ url_for('survey_delete_item', survey_id=survey.id, item_id=item.id) }}" style="display: inline;">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this item?')">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        <tr class="collapse" id="edit-item-{{ item.id }}">
+                            <td colspan="{% if survey.use_weights %}4{% else %}3{% endif %}">
+                                <form method="POST" action="{{ url_for('survey_edit_item', survey_id=survey.id, item_id=item.id) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    {% if item.rankings.count() > 0 %}
+                                    <div class="alert alert-warning py-2 mb-2">
+                                        <small>This item has {{ item.rankings.count() }} rating(s). Editing will affect existing data.</small>
+                                        <input type="hidden" name="confirm_edit" value="1">
+                                    </div>
+                                    {% endif %}
+                                    <div class="row g-2">
+                                        <div class="col-md-{% if survey.use_weights %}3{% else %}4{% endif %}">
+                                            <input type="text" class="form-control form-control-sm" name="name" value="{{ item.name }}" required>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <input type="number" class="form-control form-control-sm" name="capacity" value="{{ item.capacity }}" min="1">
+                                        </div>
+                                        {% if survey.use_weights %}
+                                        <div class="col-md-2">
+                                            <input type="number" class="form-control form-control-sm" name="weight" value="{{ item.weight }}" min="0" step="0.1">
+                                        </div>
+                                        {% endif %}
+                                        <div class="col-md-3">
+                                            <input type="text" class="form-control form-control-sm" name="description" value="{{ item.description or '' }}" placeholder="Description">
+                                        </div>
+                                        <div class="col-md-1">
+                                            <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                                        </div>
+                                    </div>
                                 </form>
                             </td>
                         </tr>
@@ -213,7 +250,7 @@
                         <tr>
                             <th>User</th>
                             {% if survey.use_weights %}
-                            <th>Credit Points</th>
+                            <th>Weight</th>
                             {% endif %}
                             {% if survey.require_user_capacity %}
                             <th>Capacity</th>
@@ -244,13 +281,50 @@
                                 <span class="badge bg-secondary">No</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="text-nowrap">
+                                {% if participant.rankings.count() > 0 %}
+                                <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="collapse" data-bs-target="#ratings-{{ participant.id }}">Ratings</button>
+                                {% endif %}
+                                {% if participant.is_dummy %}
+                                <a href="{{ url_for('survey_edit_dummy_ratings', survey_id=survey.id, participant_id=participant.id) }}" class="btn btn-sm btn-outline-primary">Edit Ratings</a>
+                                {% endif %}
                                 <form method="POST" action="{{ url_for('survey_remove_participant', survey_id=survey.id, participant_id=participant.id) }}" style="display: inline;">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this participant?')">Remove</button>
                                 </form>
                             </td>
                         </tr>
+                        {% if participant.rankings.count() > 0 %}
+                        <tr class="collapse" id="ratings-{{ participant.id }}">
+                            <td colspan="{% if survey.use_weights and survey.require_user_capacity %}5{% elif survey.use_weights or survey.require_user_capacity %}4{% else %}3{% endif %}">
+                                <table class="table table-sm table-bordered mb-0">
+                                    <thead>
+                                        <tr>
+                                            {% for item in items %}
+                                            <th class="text-center"><small>{{ item.name }}</small></th>
+                                            {% endfor %}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            {% for item in items %}
+                                            <td class="text-center">
+                                                {% set ns = namespace(found=false) %}
+                                                {% for r in participant.rankings %}
+                                                    {% if r.item_id == item.id %}
+                                                        {% if survey.ranking_mode == 'ordinal' %}{{ r.rank }}{% elif survey.ranking_mode in ('budget', 'points') %}{{ r.points }}{% else %}{{ r.rating }}{% endif %}
+                                                        {% set ns.found = true %}
+                                                    {% endif %}
+                                                {% endfor %}
+                                                {% if not ns.found %}-{% endif %}
+                                            </td>
+                                            {% endfor %}
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+                        {% endif %}
                         {% endfor %}
                     </tbody>
                 </table>
@@ -269,7 +343,7 @@
     </div>
     <div class="card-body">
         <p class="text-muted">Add dummy users with randomly generated preferences for testing or demonstration purposes.</p>
-        <form method="POST" action="{{ url_for('survey_add_dummy_users', survey_id=survey.id) }}" class="row g-2 align-items-end">
+        <form method="POST" action="{{ url_for('survey_add_dummy_users', survey_id=survey.id) }}" class="row g-2 align-items-end mb-3">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="col-auto">
                 <label for="dummy_count" class="form-label">Number of dummy users</label>
@@ -279,8 +353,58 @@
                 <button type="submit" class="btn btn-warning">Add Dummy Users</button>
             </div>
         </form>
+        {% if survey.participants.filter_by(is_dummy=True).count() > 0 %}
+        <div class="d-flex gap-2">
+            <form method="POST" action="{{ url_for('survey_remove_all_dummy_users', survey_id=survey.id) }}" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-outline-danger" onclick="return confirm('Remove all dummy users? Their ratings will be deleted.')">Remove All Dummy Users</button>
+            </form>
+            <form method="POST" action="{{ url_for('survey_regenerate_dummy_data', survey_id=survey.id) }}" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-outline-warning" onclick="return confirm('Regenerate all dummy user ratings with new random data?')">Regenerate Dummy Data</button>
+            </form>
+        </div>
+        {% endif %}
     </div>
 </div>
+
+<!-- Rating Table -->
+{% if rating_matrix and items %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">Rating Table</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered">
+                <thead>
+                    <tr>
+                        <th>Participant</th>
+                        {% for item in items %}
+                        <th class="text-center">{{ item.name }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rating_matrix %}
+                    <tr>
+                        <td>
+                            {{ row.participant.get_display_name() }}
+                            {% if row.participant.is_dummy %}
+                            <span class="badge bg-warning text-dark">D</span>
+                            {% endif %}
+                        </td>
+                        {% for item in items %}
+                        <td class="text-center">{{ row.ratings.get(item.id, '-') }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- Run Algorithm Section -->
 <div class="card mb-4">

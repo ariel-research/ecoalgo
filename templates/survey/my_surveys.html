@@ -43,8 +43,10 @@
             </div>
             <div class="card-footer">
                 <a href="{{ url_for('survey_rank', survey_id=participation.survey.id) }}" class="btn btn-primary">
-                    {% if participation.rankings.count() > 0 %}
-                    View/Edit Ranking
+                    {% if not participation.survey.is_open %}
+                    Visit
+                    {% elif participation.rankings.count() > 0 %}
+                    Edit Ranking
                     {% else %}
                     Submit Ranking
                     {% endif %}

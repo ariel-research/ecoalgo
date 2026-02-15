@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Ratings - {{ participant.dummy_name }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">Edit Ratings: {{ participant.dummy_name }}</h4>
+                <p class="text-muted mb-0 mt-1">{{ survey.title }}</p>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    {% if survey.ranking_mode == 'ordinal' %}
+                    <p class="mb-3">Assign ranks from 1 (most preferred) to {{ survey.items.count() }} (least preferred):</p>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th style="width: 100px;">Rank</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in survey.items %}
+                            <tr>
+                                <td><strong>{{ item.name }}</strong></td>
+                                <td>
+                                    <select class="form-select" name="rank_{{ item.id }}">
+                                        <option value="">-</option>
+                                        {% for i in range(1, survey.items.count() + 1) %}
+                                        <option value="{{ i }}" {{ 'selected' if rankings.get(item.id) and rankings[item.id].rank == i }}>{{ i }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+
+                    {% elif survey.ranking_mode in ('budget', 'points') %}
+                    <p class="mb-3">Distribute <strong>{{ survey.total_points }}</strong> points among items:</p>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th style="width: 120px;">Points</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in survey.items %}
+                            <tr>
+                                <td><strong>{{ item.name }}</strong></td>
+                                <td>
+                                    <input type="number" class="form-control" name="points_{{ item.id }}"
+                                           value="{{ rankings.get(item.id).points if rankings.get(item.id) else 0 }}"
+                                           min="0" max="{{ survey.total_points }}">
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+
+                    {% else %}
+                    <p class="mb-3">Score each item from <strong>{{ survey.min_score }}</strong> to <strong>{{ survey.max_score }}</strong>:</p>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th style="width: 120px;">Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in survey.items %}
+                            <tr>
+                                <td><strong>{{ item.name }}</strong></td>
+                                <td>
+                                    <input type="number" class="form-control" name="rating_{{ item.id }}"
+                                           value="{{ rankings.get(item.id).rating if rankings.get(item.id) and rankings.get(item.id).rating is not none else '' }}"
+                                           min="{{ survey.min_score }}" max="{{ survey.max_score }}">
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% endif %}
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">Save Ratings</button>
+                        <a href="{{ url_for('survey_edit', survey_id=survey.id) }}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -76,7 +76,7 @@ class Survey(db.Model):
     # Min/max scores for rating mode
     min_score = db.Column(db.Integer, default=1)
     max_score = db.Column(db.Integer, default=10)
-    # Whether to use weights (both item weights and user credit points)
+    # Whether to use weights (both item weights and user weights)
     use_weights = db.Column(db.Boolean, default=False)
 
     # Whether users must fill their own capacity
