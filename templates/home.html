@@ -12,7 +12,7 @@
         <hr class="my-4">
 
         {% if current_user.is_authenticated %}
-            <p>Welcome back, <strong>{{ current_user.username }}</strong>!</p>
+            <p>Welcome back, <strong>{{ current_user.email }}</strong>!</p>
             <p>You can now access the fair division algorithms demo.</p>
             {% if current_user.has_role('admin') %}
                 <div class="alert alert-info">

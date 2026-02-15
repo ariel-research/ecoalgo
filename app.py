@@ -1,5 +1,5 @@
 from flask import Flask, render_template, redirect, url_for, flash, request, abort, jsonify
-from flask_security import Security, SQLAlchemyUserDatastore, current_user, auth_required, roles_required, roles_accepted, hash_password
+from flask_security import Security, SQLAlchemyUserDatastore, current_user, auth_required, roles_required, roles_accepted, hash_password, user_registered
 from flask_wtf.csrf import CSRFProtect
 from config import Config
 from models import db, User, Role, Survey, SurveyItem, SurveyParticipant, ItemRanking, AllocationResult
@@ -7,6 +7,10 @@ from forms import ExtendedRegisterForm
 import uuid
 import json
 import random
+
+
+def is_ajax():
+    return request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -19,6 +23,20 @@ csrf = CSRFProtect(app)
 # Setup Flask-Security
 user_datastore = SQLAlchemyUserDatastore(db, User, Role)
 security = Security(app, user_datastore, register_form=ExtendedRegisterForm)
+
+
+@user_registered.connect_via(app)
+def on_user_registered(sender, user, **extra):
+    """Auto-generate username from email when a user registers."""
+    if not user.username:
+        base = user.email.split('@')[0]
+        username = base
+        counter = 1
+        while User.query.filter_by(username=username).first():
+            username = f'{base}{counter}'
+            counter += 1
+        user.username = username
+        db.session.commit()
 
 
 def create_roles():
@@ -86,7 +104,7 @@ def toggle_user_active(user_id):
         user.active = not user.active
         db.session.commit()
         status = 'activated' if user.active else 'deactivated'
-        flash(f'User {user.username} has been {status}.', 'success')
+        flash(f'User {user.email} has been {status}.', 'success')
     return redirect(url_for('admin_users'))
 
 
@@ -100,7 +118,7 @@ def add_user_role(user_id, role_id):
     if role not in user.roles:
         user.roles.append(role)
         db.session.commit()
-        flash(f'Role {role.name} added to {user.username}.', 'success')
+        flash(f'Role {role.name} added to {user.email}.', 'success')
     else:
         flash(f'User already has role {role.name}.', 'info')
     return redirect(url_for('admin_users'))
@@ -120,7 +138,7 @@ def remove_user_role(user_id, role_id):
     elif role in user.roles:
         user.roles.remove(role)
         db.session.commit()
-        flash(f'Role {role.name} removed from {user.username}.', 'success')
+        flash(f'Role {role.name} removed from {user.email}.', 'success')
     else:
         flash(f'User does not have role {role.name}.', 'info')
     return redirect(url_for('admin_users'))
@@ -135,10 +153,10 @@ def delete_user(user_id):
     if user == current_user:
         flash('You cannot delete your own account.', 'danger')
     else:
-        username = user.username
+        email = user.email
         db.session.delete(user)
         db.session.commit()
-        flash(f'User {username} has been deleted.', 'success')
+        flash(f'User {email} has been deleted.', 'success')
     return redirect(url_for('admin_users'))
 
 
@@ -176,6 +194,7 @@ def survey_create():
         max_score = request.form.get('max_score', 10, type=int)
         use_weights = request.form.get('use_weights') == 'on'
         require_user_capacity = request.form.get('require_user_capacity') == 'on'
+        use_item_capacity = request.form.get('use_item_capacity') == 'on'
 
         if not title:
             flash('Survey title is required.', 'danger')
@@ -190,7 +209,8 @@ def survey_create():
             min_score=min_score,
             max_score=max_score,
             use_weights=use_weights,
-            require_user_capacity=require_user_capacity
+            require_user_capacity=require_user_capacity,
+            use_item_capacity=use_item_capacity
         )
         db.session.add(survey)
         db.session.commit()
@@ -247,6 +267,7 @@ def survey_update(survey_id):
     survey.max_score = request.form.get('max_score', survey.max_score, type=int)
     survey.use_weights = request.form.get('use_weights') == 'on'
     survey.require_user_capacity = request.form.get('require_user_capacity') == 'on'
+    survey.use_item_capacity = request.form.get('use_item_capacity') == 'on'
 
     db.session.commit()
     flash('Survey updated successfully!', 'success')
@@ -304,6 +325,8 @@ def survey_add_item(survey_id):
     weight = request.form.get('weight', 1.0, type=float)
 
     if not name:
+        if is_ajax():
+            return jsonify(success=False, message='Item name is required.')
         flash('Item name is required.', 'danger')
         return redirect(url_for('survey_edit', survey_id=survey.id))
 
@@ -317,6 +340,8 @@ def survey_add_item(survey_id):
     db.session.add(item)
     db.session.commit()
 
+    if is_ajax():
+        return jsonify(success=True, message=f'Item "{name}" added to survey.', item_id=item.id)
     flash(f'Item "{name}" added to survey.', 'success')
     return redirect(url_for('survey_edit', survey_id=survey.id))
 
@@ -338,6 +363,8 @@ def survey_delete_item(survey_id, item_id):
     db.session.delete(item)
     db.session.commit()
 
+    if is_ajax():
+        return jsonify(success=True, message=f'Item "{name}" has been removed.')
     flash(f'Item "{name}" has been removed.', 'success')
     return redirect(url_for('survey_edit', survey_id=survey.id))
 
@@ -354,6 +381,31 @@ def survey_edit_item(survey_id, item_id):
     item = SurveyItem.query.get_or_404(item_id)
     if item.survey_id != survey.id:
         abort(404)
+
+    # AJAX single-field update
+    if is_ajax() and request.form.get('field'):
+        field = request.form.get('field')
+        value = request.form.get('value', '')
+        if field == 'name':
+            if not value:
+                return jsonify(success=False, message='Item name is required.')
+            item.name = value
+        elif field == 'capacity':
+            try:
+                item.capacity = int(value)
+            except (ValueError, TypeError):
+                return jsonify(success=False, message='Invalid capacity value.')
+        elif field == 'weight':
+            try:
+                item.weight = float(value)
+            except (ValueError, TypeError):
+                return jsonify(success=False, message='Invalid weight value.')
+        elif field == 'description':
+            item.description = value
+        else:
+            return jsonify(success=False, message='Unknown field.')
+        db.session.commit()
+        return jsonify(success=True, message=f'Item updated.')
 
     # Check if item has rankings and confirmation wasn't given
     if item.rankings.count() > 0 and not request.form.get('confirm_edit'):
@@ -392,14 +444,18 @@ def survey_add_participant(survey_id):
     # Check if already a participant
     existing = SurveyParticipant.query.filter_by(survey_id=survey.id, user_id=user.id).first()
     if existing:
-        flash(f'{user.username} is already a participant.', 'info')
+        if is_ajax():
+            return jsonify(success=False, message=f'{user.email} is already a participant.')
+        flash(f'{user.email} is already a participant.', 'info')
         return redirect(url_for('survey_edit', survey_id=survey.id))
 
     participant = SurveyParticipant(survey_id=survey.id, user_id=user.id)
     db.session.add(participant)
     db.session.commit()
 
-    flash(f'{user.username} has been added to the survey.', 'success')
+    if is_ajax():
+        return jsonify(success=True, message=f'{user.email} has been added to the survey.')
+    flash(f'{user.email} has been added to the survey.', 'success')
     return redirect(url_for('survey_edit', survey_id=survey.id))
 
 
@@ -420,6 +476,8 @@ def survey_remove_participant(survey_id, participant_id):
     db.session.delete(participant)
     db.session.commit()
 
+    if is_ajax():
+        return jsonify(success=True, message=f'{name} has been removed from the survey.')
     flash(f'{name} has been removed from the survey.', 'success')
     return redirect(url_for('survey_edit', survey_id=survey.id))
 
@@ -437,13 +495,25 @@ def survey_add_dummy_users(survey_id):
 
     count = request.form.get('count', 1, type=int)
     if count < 1 or count > 100:
-        flash('Please enter a number between 1 and 100.', 'danger')
+        msg = 'Please enter a number between 1 and 100.'
+        if is_ajax():
+            return jsonify(success=False, message=msg)
+        flash(msg, 'danger')
         return redirect(url_for('survey_edit', survey_id=survey.id))
 
     items = survey.items.all()
     if not items:
-        flash('Please add items to the survey before adding dummy users.', 'danger')
+        msg = 'Please add items to the survey before adding dummy users.'
+        if is_ajax():
+            return jsonify(success=False, message=msg)
+        flash(msg, 'danger')
         return redirect(url_for('survey_edit', survey_id=survey.id))
+
+    # Manual vs random weight/capacity
+    weight_random = request.form.get('dummy_weight_random') == 'on'
+    capacity_random = request.form.get('dummy_capacity_random') == 'on'
+    manual_weight = request.form.get('dummy_weight', type=float)
+    manual_capacity = request.form.get('dummy_capacity', type=int)
 
     # Find the next dummy user number
     existing_dummies = SurveyParticipant.query.filter_by(survey_id=survey.id, is_dummy=True).count()
@@ -456,9 +526,15 @@ def survey_add_dummy_users(survey_id):
             dummy_name=dummy_name
         )
         if survey.use_weights:
-            participant.user_weight = round(random.uniform(0.5, 5.0), 1)
+            if weight_random or manual_weight is None:
+                participant.user_weight = round(random.uniform(0.5, 5.0), 1)
+            else:
+                participant.user_weight = manual_weight
         if survey.require_user_capacity:
-            participant.user_capacity = random.randint(1, max(1, len(items)))
+            if capacity_random or manual_capacity is None:
+                participant.user_capacity = random.randint(1, max(1, len(items)))
+            else:
+                participant.user_capacity = manual_capacity
         db.session.add(participant)
         db.session.flush()  # Get the participant ID
 
@@ -504,7 +580,10 @@ def survey_add_dummy_users(survey_id):
                 db.session.add(ranking)
 
     db.session.commit()
-    flash(f'{count} dummy user(s) added with random preferences.', 'success')
+    msg = f'{count} dummy user(s) added with random preferences.'
+    if is_ajax():
+        return jsonify(success=True, message=msg)
+    flash(msg, 'success')
     return redirect(url_for('survey_edit', survey_id=survey.id))
 
 
@@ -523,7 +602,10 @@ def survey_remove_all_dummy_users(survey_id):
         db.session.delete(dummy)
     db.session.commit()
 
-    flash(f'{count} dummy user(s) removed.', 'success')
+    msg = f'{count} dummy user(s) removed.'
+    if is_ajax():
+        return jsonify(success=True, message=msg)
+    flash(msg, 'success')
     return redirect(url_for('survey_edit', survey_id=survey.id))
 
 
@@ -538,11 +620,20 @@ def survey_regenerate_dummy_data(survey_id):
 
     items = survey.items.all()
     if not items:
-        flash('No items in the survey.', 'danger')
+        msg = 'No items in the survey.'
+        if is_ajax():
+            return jsonify(success=False, message=msg)
+        flash(msg, 'danger')
         return redirect(url_for('survey_edit', survey_id=survey.id))
 
     dummies = SurveyParticipant.query.filter_by(survey_id=survey.id, is_dummy=True).all()
     for participant in dummies:
+        # Regenerate user weight and capacity if required
+        if survey.use_weights:
+            participant.user_weight = round(random.uniform(0.5, 5.0), 1)
+        if survey.require_user_capacity:
+            participant.user_capacity = random.randint(1, max(1, len(items)))
+
         # Delete existing rankings
         ItemRanking.query.filter_by(participant_id=participant.id).delete()
 
@@ -569,7 +660,10 @@ def survey_regenerate_dummy_data(survey_id):
                 db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id, rating=rating))
 
     db.session.commit()
-    flash(f'Regenerated data for {len(dummies)} dummy user(s).', 'success')
+    msg = f'Regenerated data for {len(dummies)} dummy user(s).'
+    if is_ajax():
+        return jsonify(success=True, message=msg)
+    flash(msg, 'success')
     return redirect(url_for('survey_edit', survey_id=survey.id))
 
 
@@ -615,6 +709,84 @@ def survey_edit_dummy_ratings(survey_id, participant_id):
     return render_template('survey/edit_dummy_ratings.html', survey=survey, participant=participant, rankings=rankings)
 
 
+# ==================== AJAX INLINE EDITING ====================
+
+@app.route('/surveys/<int:survey_id>/ratings/update', methods=['POST'])
+@auth_required()
+@roles_accepted('admin', 'moderator')
+def survey_update_rating(survey_id):
+    """Update a single rating value (AJAX only)."""
+    survey = Survey.query.get_or_404(survey_id)
+    if survey.creator_id != current_user.id and not current_user.has_role('admin'):
+        abort(403)
+
+    participant_id = request.form.get('participant_id', type=int)
+    item_id = request.form.get('item_id', type=int)
+    value = request.form.get('value', '')
+
+    participant = SurveyParticipant.query.get_or_404(participant_id)
+    if participant.survey_id != survey.id or not participant.is_dummy:
+        return jsonify(success=False, message='Can only edit dummy user ratings.')
+
+    item = SurveyItem.query.get_or_404(item_id)
+    if item.survey_id != survey.id:
+        return jsonify(success=False, message='Item not in this survey.')
+
+    # Find or create the ranking
+    ranking = ItemRanking.query.filter_by(participant_id=participant_id, item_id=item_id).first()
+    if not ranking:
+        ranking = ItemRanking(participant_id=participant_id, item_id=item_id)
+        db.session.add(ranking)
+
+    try:
+        val = int(value) if value else 0
+    except (ValueError, TypeError):
+        return jsonify(success=False, message='Invalid value.')
+
+    if survey.ranking_mode == 'ordinal':
+        ranking.rank = val
+    elif survey.ranking_mode in ('budget', 'points'):
+        ranking.points = val
+    else:
+        ranking.rating = val
+
+    db.session.commit()
+    return jsonify(success=True)
+
+
+@app.route('/surveys/<int:survey_id>/participants/<int:participant_id>/update-field', methods=['POST'])
+@auth_required()
+@roles_accepted('admin', 'moderator')
+def survey_update_participant_field(survey_id, participant_id):
+    """Update a single field on a participant (AJAX only)."""
+    survey = Survey.query.get_or_404(survey_id)
+    if survey.creator_id != current_user.id and not current_user.has_role('admin'):
+        abort(403)
+
+    participant = SurveyParticipant.query.get_or_404(participant_id)
+    if participant.survey_id != survey.id:
+        abort(404)
+
+    field = request.form.get('field')
+    value = request.form.get('value', '')
+
+    if field == 'user_weight':
+        try:
+            participant.user_weight = float(value) if value else None
+        except (ValueError, TypeError):
+            return jsonify(success=False, message='Invalid weight value.')
+    elif field == 'user_capacity':
+        try:
+            participant.user_capacity = int(value) if value else None
+        except (ValueError, TypeError):
+            return jsonify(success=False, message='Invalid capacity value.')
+    else:
+        return jsonify(success=False, message='Unknown field.')
+
+    db.session.commit()
+    return jsonify(success=True)
+
+
 # ==================== ALGORITHM EXECUTION ====================
 
 def survey_to_fairpyx_valuations(survey):
@@ -641,8 +813,12 @@ def survey_to_fairpyx_valuations(survey):
 
 
 def get_item_capacities(survey):
-    """Get item capacities as a dict."""
-    return {item.name: item.capacity for item in survey.items.all()}
+    """Get item capacities as a dict. If use_item_capacity is disabled, return large capacity for all."""
+    if survey.use_item_capacity:
+        return {item.name: item.capacity for item in survey.items.all()}
+    # When item capacity is disabled, use number of participants as capacity (effectively unlimited)
+    num_participants = survey.participants.count()
+    return {item.name: max(num_participants, 1) for item in survey.items.all()}
 
 
 @app.route('/surveys/<int:survey_id>/run-algorithm', methods=['POST'])

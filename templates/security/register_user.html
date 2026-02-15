@@ -14,14 +14,6 @@
                     {{ register_user_form.hidden_tag() }}
 
                     <div class="mb-3">
-                        {{ register_user_form.username.label(class="form-label") }}
-                        {{ register_user_form.username(class="form-control" + (" is-invalid" if register_user_form.username.errors else ""), placeholder="Choose a username") }}
-                        {% for error in register_user_form.username.errors %}
-                            <div class="invalid-feedback">{{ error }}</div>
-                        {% endfor %}
-                    </div>
-
-                    <div class="mb-3">
                         {{ register_user_form.email.label(class="form-label") }}
                         {{ register_user_form.email(class="form-control" + (" is-invalid" if register_user_form.email.errors else ""), placeholder="Enter your email") }}
                         {% for error in register_user_form.email.errors %}
@@ -33,14 +25,6 @@
                         {{ register_user_form.password.label(class="form-label") }}
                         {{ register_user_form.password(class="form-control" + (" is-invalid" if register_user_form.password.errors else ""), placeholder="Create a password") }}
                         {% for error in register_user_form.password.errors %}
-                            <div class="invalid-feedback">{{ error }}</div>
-                        {% endfor %}
-                    </div>
-
-                    <div class="mb-3">
-                        {{ register_user_form.password_confirm.label(class="form-label") }}
-                        {{ register_user_form.password_confirm(class="form-control" + (" is-invalid" if register_user_form.password_confirm.errors else ""), placeholder="Confirm your password") }}
-                        {% for error in register_user_form.password_confirm.errors %}
                             <div class="invalid-feedback">{{ error }}</div>
                         {% endfor %}
                     </div>

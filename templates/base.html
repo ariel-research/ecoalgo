@@ -45,7 +45,7 @@
                     {% if current_user.is_authenticated %}
                         <li class="nav-item">
                             <span class="nav-link">
-                                Hello, {{ current_user.username }}
+                                Hello, {{ current_user.email }}
                                 {% if current_user.has_role('admin') %}
                                     <span class="badge bg-danger">Admin</span>
                                 {% elif current_user.has_role('moderator') %}

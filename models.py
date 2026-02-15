@@ -24,7 +24,7 @@ class Role(db.Model, RoleMixin):
 
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    username = db.Column(db.String(64), unique=True, nullable=True, index=True)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password = db.Column(db.String(255), nullable=False)
 
@@ -54,7 +54,7 @@ class User(db.Model, UserMixin):
         return role in self.roles
 
     def __repr__(self):
-        return f'<User {self.username}>'
+        return f'<User {self.email}>'
 
 
 class Survey(db.Model):
@@ -81,6 +81,9 @@ class Survey(db.Model):
 
     # Whether users must fill their own capacity
     require_user_capacity = db.Column(db.Boolean, default=False)
+
+    # Whether to use item capacities (if False, treat all items as unlimited capacity)
+    use_item_capacity = db.Column(db.Boolean, default=False)
 
     # Survey state
     is_open = db.Column(db.Boolean, default=True)
@@ -141,10 +144,10 @@ class SurveyParticipant(db.Model):
         """Return display name for this participant."""
         if self.is_dummy:
             return self.dummy_name
-        return self.user.username if self.user else 'Unknown'
+        return self.user.email if self.user else 'Unknown'
 
     def __repr__(self):
-        name = self.dummy_name if self.is_dummy else (self.user.username if self.user else 'Unknown')
+        name = self.dummy_name if self.is_dummy else (self.user.email if self.user else 'Unknown')
         return f'<SurveyParticipant {name} in {self.survey.title}>'
 
 

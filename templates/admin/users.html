@@ -16,7 +16,6 @@
             <thead>
                 <tr>
                     <th>ID</th>
-                    <th>Username</th>
                     <th>Email</th>
                     <th>Roles</th>
                     <th>Status</th>
@@ -29,12 +28,11 @@
                 <tr>
                     <td>{{ user.id }}</td>
                     <td>
-                        {{ user.username }}
+                        {{ user.email }}
                         {% if user == current_user %}
                             <span class="badge bg-info">You</span>
                         {% endif %}
                     </td>
-                    <td>{{ user.email }}</td>
                     <td>
                         {% for role in user.roles %}
                             <span class="badge bg-primary me-1">{{ role.name }}</span>

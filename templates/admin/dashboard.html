@@ -50,7 +50,6 @@
                 <table class="table table-sm">
                     <thead>
                         <tr>
-                            <th>Username</th>
                             <th>Email</th>
                             <th>Status</th>
                         </tr>
@@ -58,7 +57,6 @@
                     <tbody>
                         {% for user in users[:5] %}
                         <tr>
-                            <td>{{ user.username }}</td>
                             <td>{{ user.email }}</td>
                             <td>
                                 {% if user.active %}

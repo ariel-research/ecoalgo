@@ -3,6 +3,9 @@
 {% block title %}{{ survey.title }} - Fair Division Algorithms{% endblock %}
 
 {% block content %}
+<!-- Toast container -->
+<div id="toast-container" style="position: fixed; top: 20px; right: 20px; z-index: 9999;"></div>
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1>{{ survey.title }}</h1>
@@ -78,7 +81,16 @@
                         </label>
                     </div>
                 </div>
-                <div class="col-md-8 mb-3">
+                <div class="col-md-4 mb-3">
+                    <label class="form-label"><strong>Item Capacities</strong></label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="use_item_capacity" name="use_item_capacity" {{ 'checked' if survey.use_item_capacity }}>
+                        <label class="form-check-label" for="use_item_capacity">
+                            Use item capacities
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-3">
                     <label class="form-label"><strong>User Requirements</strong></label>
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="require_user_capacity" name="require_user_capacity" {{ 'checked' if survey.require_user_capacity }}>
@@ -113,30 +125,32 @@
     <div class="col-md-6">
         <div class="card mb-4">
             <div class="card-header">
-                <h5 class="mb-0">Items ({{ survey.items.count() }})</h5>
+                <h5 class="mb-0">Items (<span id="items-count">{{ survey.items.count() }}</span>)</h5>
             </div>
             <div class="card-body">
                 <!-- Add Item Form -->
-                <form method="POST" action="{{ url_for('survey_add_item', survey_id=survey.id) }}" class="mb-3">
+                <form id="add-item-form" class="mb-3">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="row g-2">
-                        <div class="col-md-{% if survey.use_weights %}4{% else %}6{% endif %}">
+                        <div class="col">
                             <label class="form-label">Item Name</label>
                             <input type="text" class="form-control" name="name" placeholder="Item name" required>
                         </div>
-                        <div class="col-md-{% if survey.use_weights %}3{% else %}4{% endif %}">
+                        {% if survey.use_item_capacity %}
+                        <div class="col-auto">
                             <label class="form-label">Capacity</label>
-                            <input type="number" class="form-control" name="capacity" placeholder="Capacity" value="1" min="1">
-                        </div>
-                        {% if survey.use_weights %}
-                        <div class="col-md-3">
-                            <label class="form-label">Weight</label>
-                            <input type="number" class="form-control" name="weight" placeholder="Weight" value="1.0" min="0" step="0.1">
+                            <input type="number" class="form-control" name="capacity" placeholder="Cap" value="1" min="1" style="width: 80px;">
                         </div>
                         {% endif %}
-                        <div class="col-md-2">
+                        {% if survey.use_weights %}
+                        <div class="col-auto">
+                            <label class="form-label">Weight</label>
+                            <input type="number" class="form-control" name="weight" placeholder="Wt" value="1.0" min="0" step="0.1" style="width: 80px;">
+                        </div>
+                        {% endif %}
+                        <div class="col-auto">
                             <label class="form-label">&nbsp;</label>
-                            <button type="submit" class="btn btn-success w-100">Add</button>
+                            <button type="submit" class="btn btn-success d-block">Add</button>
                         </div>
                     </div>
                     <div class="mt-2">
@@ -145,12 +159,15 @@
                 </form>
 
                 <!-- Items List -->
+                <div id="items-table-container">
                 {% if survey.items.count() > 0 %}
-                <table class="table table-sm">
+                <table class="table table-sm" id="items-table">
                     <thead>
                         <tr>
                             <th>Name</th>
+                            {% if survey.use_item_capacity %}
                             <th>Capacity</th>
+                            {% endif %}
                             {% if survey.use_weights %}
                             <th>Weight</th>
                             {% endif %}
@@ -159,55 +176,21 @@
                     </thead>
                     <tbody>
                         {% for item in survey.items %}
-                        <tr>
-                            <td>
+                        <tr data-item-id="{{ item.id }}">
+                            <td class="editable-cell" data-field="name" data-item-id="{{ item.id }}">
                                 {{ item.name }}
                                 {% if item.description %}
-                                <br><small class="text-muted">{{ item.description }}</small>
+                                <br><small class="text-muted item-desc" data-field="description" data-item-id="{{ item.id }}">{{ item.description }}</small>
                                 {% endif %}
                             </td>
-                            <td>{{ item.capacity }}</td>
+                            {% if survey.use_item_capacity %}
+                            <td class="editable-cell" data-field="capacity" data-item-id="{{ item.id }}">{{ item.capacity }}</td>
+                            {% endif %}
                             {% if survey.use_weights %}
-                            <td>{{ item.weight }}</td>
+                            <td class="editable-cell" data-field="weight" data-item-id="{{ item.id }}">{{ item.weight }}</td>
                             {% endif %}
                             <td class="text-nowrap">
-                                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#edit-item-{{ item.id }}">Edit</button>
-                                <form method="POST" action="{{ url_for('survey_delete_item', survey_id=survey.id, item_id=item.id) }}" style="display: inline;">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this item?')">Delete</button>
-                                </form>
-                            </td>
-                        </tr>
-                        <tr class="collapse" id="edit-item-{{ item.id }}">
-                            <td colspan="{% if survey.use_weights %}4{% else %}3{% endif %}">
-                                <form method="POST" action="{{ url_for('survey_edit_item', survey_id=survey.id, item_id=item.id) }}">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    {% if item.rankings.count() > 0 %}
-                                    <div class="alert alert-warning py-2 mb-2">
-                                        <small>This item has {{ item.rankings.count() }} rating(s). Editing will affect existing data.</small>
-                                        <input type="hidden" name="confirm_edit" value="1">
-                                    </div>
-                                    {% endif %}
-                                    <div class="row g-2">
-                                        <div class="col-md-{% if survey.use_weights %}3{% else %}4{% endif %}">
-                                            <input type="text" class="form-control form-control-sm" name="name" value="{{ item.name }}" required>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <input type="number" class="form-control form-control-sm" name="capacity" value="{{ item.capacity }}" min="1">
-                                        </div>
-                                        {% if survey.use_weights %}
-                                        <div class="col-md-2">
-                                            <input type="number" class="form-control form-control-sm" name="weight" value="{{ item.weight }}" min="0" step="0.1">
-                                        </div>
-                                        {% endif %}
-                                        <div class="col-md-3">
-                                            <input type="text" class="form-control form-control-sm" name="description" value="{{ item.description or '' }}" placeholder="Description">
-                                        </div>
-                                        <div class="col-md-1">
-                                            <button type="submit" class="btn btn-sm btn-primary">Save</button>
-                                        </div>
-                                    </div>
-                                </form>
+                                <button type="button" class="btn btn-sm btn-outline-danger btn-delete-item" data-item-id="{{ item.id }}">Delete</button>
                             </td>
                         </tr>
                         {% endfor %}
@@ -216,6 +199,7 @@
                 {% else %}
                 <p class="text-muted">No items added yet.</p>
                 {% endif %}
+                </div>
             </div>
         </div>
     </div>
@@ -224,18 +208,18 @@
     <div class="col-md-6">
         <div class="card mb-4">
             <div class="card-header">
-                <h5 class="mb-0">Participants ({{ survey.participants.count() }})</h5>
+                <h5 class="mb-0">Participants (<span id="participants-count">{{ survey.participants.count() }}</span>)</h5>
             </div>
             <div class="card-body">
                 <!-- Add Participant Form -->
-                <form method="POST" action="{{ url_for('survey_add_participant', survey_id=survey.id) }}" class="mb-3">
+                <form id="add-participant-form" class="mb-3">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="input-group">
                         <select class="form-select" name="user_id" required>
                             <option value="">Select user to add...</option>
                             {% for user in users %}
                                 {% if not survey.participants.filter_by(user_id=user.id).first() %}
-                                <option value="{{ user.id }}">{{ user.username }} ({{ user.email }})</option>
+                                <option value="{{ user.id }}">{{ user.email }}</option>
                                 {% endif %}
                             {% endfor %}
                         </select>
@@ -244,6 +228,7 @@
                 </form>
 
                 <!-- Participants List -->
+                <div id="participants-table-container">
                 {% if survey.participants.count() > 0 %}
                 <table class="table table-sm">
                     <thead>
@@ -261,7 +246,7 @@
                     </thead>
                     <tbody>
                         {% for participant in survey.participants %}
-                        <tr>
+                        <tr data-participant-id="{{ participant.id }}">
                             <td>
                                 {{ participant.get_display_name() }}
                                 {% if participant.is_dummy %}
@@ -269,10 +254,10 @@
                                 {% endif %}
                             </td>
                             {% if survey.use_weights %}
-                            <td>{{ participant.user_weight or '-' }}</td>
+                            <td class="{% if participant.is_dummy %}editable-cell{% endif %}" {% if participant.is_dummy %}data-field="user_weight" data-participant-id="{{ participant.id }}"{% endif %}>{{ participant.user_weight or '-' }}</td>
                             {% endif %}
                             {% if survey.require_user_capacity %}
-                            <td>{{ participant.user_capacity or '-' }}</td>
+                            <td class="{% if participant.is_dummy %}editable-cell{% endif %}" {% if participant.is_dummy %}data-field="user_capacity" data-participant-id="{{ participant.id }}"{% endif %}>{{ participant.user_capacity or '-' }}</td>
                             {% endif %}
                             <td>
                                 {% if participant.rankings.count() > 0 %}
@@ -282,55 +267,19 @@
                                 {% endif %}
                             </td>
                             <td class="text-nowrap">
-                                {% if participant.rankings.count() > 0 %}
-                                <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="collapse" data-bs-target="#ratings-{{ participant.id }}">Ratings</button>
-                                {% endif %}
                                 {% if participant.is_dummy %}
                                 <a href="{{ url_for('survey_edit_dummy_ratings', survey_id=survey.id, participant_id=participant.id) }}" class="btn btn-sm btn-outline-primary">Edit Ratings</a>
                                 {% endif %}
-                                <form method="POST" action="{{ url_for('survey_remove_participant', survey_id=survey.id, participant_id=participant.id) }}" style="display: inline;">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this participant?')">Remove</button>
-                                </form>
+                                <button type="button" class="btn btn-sm btn-outline-danger btn-remove-participant" data-participant-id="{{ participant.id }}">Remove</button>
                             </td>
                         </tr>
-                        {% if participant.rankings.count() > 0 %}
-                        <tr class="collapse" id="ratings-{{ participant.id }}">
-                            <td colspan="{% if survey.use_weights and survey.require_user_capacity %}5{% elif survey.use_weights or survey.require_user_capacity %}4{% else %}3{% endif %}">
-                                <table class="table table-sm table-bordered mb-0">
-                                    <thead>
-                                        <tr>
-                                            {% for item in items %}
-                                            <th class="text-center"><small>{{ item.name }}</small></th>
-                                            {% endfor %}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            {% for item in items %}
-                                            <td class="text-center">
-                                                {% set ns = namespace(found=false) %}
-                                                {% for r in participant.rankings %}
-                                                    {% if r.item_id == item.id %}
-                                                        {% if survey.ranking_mode == 'ordinal' %}{{ r.rank }}{% elif survey.ranking_mode in ('budget', 'points') %}{{ r.points }}{% else %}{{ r.rating }}{% endif %}
-                                                        {% set ns.found = true %}
-                                                    {% endif %}
-                                                {% endfor %}
-                                                {% if not ns.found %}-{% endif %}
-                                            </td>
-                                            {% endfor %}
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </td>
-                        </tr>
-                        {% endif %}
                         {% endfor %}
                     </tbody>
                 </table>
                 {% else %}
                 <p class="text-muted">No participants yet. Share the invite link or add users manually.</p>
                 {% endif %}
+                </div>
             </div>
         </div>
     </div>
@@ -343,32 +292,53 @@
     </div>
     <div class="card-body">
         <p class="text-muted">Add dummy users with randomly generated preferences for testing or demonstration purposes.</p>
-        <form method="POST" action="{{ url_for('survey_add_dummy_users', survey_id=survey.id) }}" class="row g-2 align-items-end mb-3">
+        <form id="add-dummy-form" class="mb-3">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="col-auto">
-                <label for="dummy_count" class="form-label">Number of dummy users</label>
-                <input type="number" class="form-control" id="dummy_count" name="count" value="5" min="1" max="100" style="width: 100px;">
-            </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-warning">Add Dummy Users</button>
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label for="dummy_count" class="form-label">Number of dummy users</label>
+                    <input type="number" class="form-control" id="dummy_count" name="count" value="5" min="1" max="100" style="width: 100px;">
+                </div>
+                {% if survey.use_weights %}
+                <div class="col-auto">
+                    <label class="form-label">Weight</label>
+                    <div class="input-group" style="width: 180px;">
+                        <input type="number" class="form-control" name="dummy_weight" placeholder="Random" min="0.1" step="0.1" id="dummy-weight-input">
+                        <div class="input-group-text">
+                            <input class="form-check-input mt-0" type="checkbox" name="dummy_weight_random" id="dummy-weight-random" checked title="Random">
+                            <label class="ms-1 small" for="dummy-weight-random">Rnd</label>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                {% if survey.require_user_capacity %}
+                <div class="col-auto">
+                    <label class="form-label">Capacity</label>
+                    <div class="input-group" style="width: 180px;">
+                        <input type="number" class="form-control" name="dummy_capacity" placeholder="Random" min="1" id="dummy-capacity-input">
+                        <div class="input-group-text">
+                            <input class="form-check-input mt-0" type="checkbox" name="dummy_capacity_random" id="dummy-capacity-random" checked title="Random">
+                            <label class="ms-1 small" for="dummy-capacity-random">Rnd</label>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-warning">Add Dummy Users</button>
+                </div>
             </div>
         </form>
         {% if survey.participants.filter_by(is_dummy=True).count() > 0 %}
-        <div class="d-flex gap-2">
-            <form method="POST" action="{{ url_for('survey_remove_all_dummy_users', survey_id=survey.id) }}" style="display: inline;">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn btn-outline-danger" onclick="return confirm('Remove all dummy users? Their ratings will be deleted.')">Remove All Dummy Users</button>
-            </form>
-            <form method="POST" action="{{ url_for('survey_regenerate_dummy_data', survey_id=survey.id) }}" style="display: inline;">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn btn-outline-warning" onclick="return confirm('Regenerate all dummy user ratings with new random data?')">Regenerate Dummy Data</button>
-            </form>
+        <div class="d-flex gap-2" id="dummy-actions">
+            <button type="button" class="btn btn-outline-danger" id="btn-remove-all-dummies" onclick="if(!confirm('Remove all dummy users? Their ratings will be deleted.')) return;">Remove All Dummy Users</button>
+            <button type="button" class="btn btn-outline-warning" id="btn-regenerate-dummies" onclick="if(!confirm('Regenerate all dummy user ratings with new random data?')) return;">Regenerate Dummy Data</button>
         </div>
         {% endif %}
     </div>
 </div>
 
 <!-- Rating Table -->
+<div id="rating-table-container">
 {% if rating_matrix and items %}
 <div class="card mb-4">
     <div class="card-header">
@@ -376,7 +346,7 @@
     </div>
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-sm table-bordered">
+            <table class="table table-sm table-bordered" id="rating-table">
                 <thead>
                     <tr>
                         <th>Participant</th>
@@ -395,7 +365,10 @@
                             {% endif %}
                         </td>
                         {% for item in items %}
-                        <td class="text-center">{{ row.ratings.get(item.id, '-') }}</td>
+                        <td class="text-center {% if row.participant.is_dummy %}editable-cell{% endif %}"
+                            {% if row.participant.is_dummy %}data-field="rating" data-participant-id="{{ row.participant.id }}" data-item-id="{{ item.id }}"{% endif %}>
+                            {{ row.ratings.get(item.id, '-') }}
+                        </td>
                         {% endfor %}
                     </tr>
                     {% endfor %}
@@ -405,6 +378,7 @@
     </div>
 </div>
 {% endif %}
+</div>
 
 <!-- Run Algorithm Section -->
 <div class="card mb-4">
@@ -459,12 +433,288 @@
     </div>
 </div>
 
+<style>
+.editable-cell { cursor: pointer; }
+.editable-cell:hover { background-color: #f0f0f0; }
+.editable-cell input { width: 100%; min-width: 40px; }
+.flash-success { animation: flashGreen 0.6s; }
+.flash-error { animation: flashRed 0.6s; }
+@keyframes flashGreen { 0% { background-color: #d4edda; } 100% { background-color: transparent; } }
+@keyframes flashRed { 0% { background-color: #f8d7da; } 100% { background-color: transparent; } }
+.toast-msg { padding: 10px 16px; margin-bottom: 8px; border-radius: 6px; color: #fff; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); opacity: 0; transition: opacity 0.3s; }
+.toast-msg.show { opacity: 1; }
+.toast-msg.success { background-color: #198754; }
+.toast-msg.danger { background-color: #dc3545; }
+.toast-msg.info { background-color: #0dcaf0; color: #000; }
+</style>
+
 <script>
+const SURVEY_ID = {{ survey.id }};
+const CSRF_TOKEN = '{{ csrf_token() }}';
+
+// ==================== TOAST ====================
+function showToast(message, type) {
+    type = type || 'success';
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast-msg ' + type;
+    toast.textContent = message;
+    container.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// ==================== AJAX HELPER ====================
+function ajaxPost(url, data) {
+    const formData = new FormData();
+    formData.append('csrf_token', CSRF_TOKEN);
+    if (data) {
+        for (const [k, v] of Object.entries(data)) {
+            formData.append(k, v);
+        }
+    }
+    return fetch(url, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData
+    }).then(r => r.json());
+}
+
+// ==================== INLINE EDITING ====================
+function makeEditable(cell, saveCallback) {
+    cell.addEventListener('dblclick', function() {
+        if (cell.querySelector('input')) return;
+        const originalText = cell.textContent.trim();
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = originalText === '-' ? '' : originalText;
+        input.className = 'form-control form-control-sm';
+        cell.textContent = '';
+        cell.appendChild(input);
+        input.focus();
+        input.select();
+
+        function finish(save) {
+            const newValue = input.value.trim();
+            input.removeEventListener('blur', onBlur);
+            if (save && newValue !== originalText) {
+                cell.textContent = newValue || '-';
+                saveCallback(newValue, function(ok) {
+                    cell.classList.add(ok ? 'flash-success' : 'flash-error');
+                    setTimeout(() => cell.classList.remove('flash-success', 'flash-error'), 600);
+                    if (!ok) cell.textContent = originalText;
+                });
+            } else {
+                cell.textContent = originalText;
+            }
+        }
+
+        function onBlur() { finish(true); }
+        input.addEventListener('blur', onBlur);
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+            if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        });
+    });
+}
+
+// Init inline editing for item cells
+document.querySelectorAll('#items-table .editable-cell[data-item-id]').forEach(function(cell) {
+    makeEditable(cell, function(newValue, done) {
+        const itemId = cell.dataset.itemId;
+        const field = cell.dataset.field;
+        ajaxPost('/surveys/' + SURVEY_ID + '/items/' + itemId + '/edit', {
+            field: field, value: newValue, confirm_edit: '1'
+        }).then(function(resp) {
+            done(resp.success);
+            if (resp.success) showToast('Item updated');
+            else showToast(resp.message || 'Update failed', 'danger');
+        }).catch(function() { done(false); showToast('Network error', 'danger'); });
+    });
+});
+
+// Init inline editing for participant weight/capacity cells
+document.querySelectorAll('.editable-cell[data-participant-id]:not([data-item-id])').forEach(function(cell) {
+    makeEditable(cell, function(newValue, done) {
+        const participantId = cell.dataset.participantId;
+        const field = cell.dataset.field;
+        ajaxPost('/surveys/' + SURVEY_ID + '/participants/' + participantId + '/update-field', {
+            field: field, value: newValue
+        }).then(function(resp) {
+            done(resp.success);
+            if (resp.success) showToast('Updated');
+            else showToast(resp.message || 'Update failed', 'danger');
+        }).catch(function() { done(false); showToast('Network error', 'danger'); });
+    });
+});
+
+// Init inline editing for rating cells
+document.querySelectorAll('#rating-table .editable-cell[data-item-id]').forEach(function(cell) {
+    makeEditable(cell, function(newValue, done) {
+        const participantId = cell.dataset.participantId;
+        const itemId = cell.dataset.itemId;
+        ajaxPost('/surveys/' + SURVEY_ID + '/ratings/update', {
+            participant_id: participantId, item_id: itemId, value: newValue
+        }).then(function(resp) {
+            done(resp.success);
+            if (resp.success) showToast('Rating updated');
+            else showToast(resp.message || 'Update failed', 'danger');
+        }).catch(function() { done(false); showToast('Network error', 'danger'); });
+    });
+});
+
+// ==================== AJAX FORMS ====================
+
+// Reload page sections after major changes
+function reloadPage() {
+    window.location.reload();
+}
+
+// Add Item
+document.getElementById('add-item-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+    const data = {};
+    formData.forEach((v, k) => { if (k !== 'csrf_token') data[k] = v; });
+    ajaxPost('/surveys/' + SURVEY_ID + '/items/add', data).then(function(resp) {
+        if (resp.success) {
+            showToast(resp.message || 'Item added');
+            form.reset();
+            reloadPage();
+        } else {
+            showToast(resp.message || 'Failed to add item', 'danger');
+        }
+    }).catch(function() { showToast('Network error', 'danger'); });
+});
+
+// Delete Item
+document.querySelectorAll('.btn-delete-item').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        if (!confirm('Delete this item?')) return;
+        const itemId = btn.dataset.itemId;
+        ajaxPost('/surveys/' + SURVEY_ID + '/items/' + itemId + '/delete', {}).then(function(resp) {
+            if (resp.success) {
+                showToast(resp.message || 'Item deleted');
+                reloadPage();
+            } else {
+                showToast(resp.message || 'Failed to delete', 'danger');
+            }
+        }).catch(function() { showToast('Network error', 'danger'); });
+    });
+});
+
+// Remove Participant
+document.querySelectorAll('.btn-remove-participant').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        if (!confirm('Remove this participant?')) return;
+        const pid = btn.dataset.participantId;
+        ajaxPost('/surveys/' + SURVEY_ID + '/participants/' + pid + '/remove', {}).then(function(resp) {
+            if (resp.success) {
+                showToast(resp.message || 'Participant removed');
+                reloadPage();
+            } else {
+                showToast(resp.message || 'Failed to remove', 'danger');
+            }
+        }).catch(function() { showToast('Network error', 'danger'); });
+    });
+});
+
+// Add Dummy Users
+document.getElementById('add-dummy-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+    const data = {};
+    formData.forEach((v, k) => { if (k !== 'csrf_token') data[k] = v; });
+    // Handle checkboxes explicitly
+    const wr = document.getElementById('dummy-weight-random');
+    if (wr && wr.checked) data['dummy_weight_random'] = 'on';
+    const cr = document.getElementById('dummy-capacity-random');
+    if (cr && cr.checked) data['dummy_capacity_random'] = 'on';
+    ajaxPost('/surveys/' + SURVEY_ID + '/dummy-users/add', data).then(function(resp) {
+        if (resp.success) {
+            showToast(resp.message || 'Dummy users added');
+            reloadPage();
+        } else {
+            showToast(resp.message || 'Failed', 'danger');
+        }
+    }).catch(function() { showToast('Network error', 'danger'); });
+});
+
+// Remove All Dummies
+var removeAllBtn = document.getElementById('btn-remove-all-dummies');
+if (removeAllBtn) {
+    removeAllBtn.addEventListener('click', function() {
+        ajaxPost('/surveys/' + SURVEY_ID + '/dummy-users/remove-all', {}).then(function(resp) {
+            if (resp.success) {
+                showToast(resp.message || 'Dummy users removed');
+                reloadPage();
+            } else {
+                showToast(resp.message || 'Failed', 'danger');
+            }
+        }).catch(function() { showToast('Network error', 'danger'); });
+    });
+}
+
+// Regenerate Dummy Data
+var regenBtn = document.getElementById('btn-regenerate-dummies');
+if (regenBtn) {
+    regenBtn.addEventListener('click', function() {
+        ajaxPost('/surveys/' + SURVEY_ID + '/dummy-users/regenerate', {}).then(function(resp) {
+            if (resp.success) {
+                showToast(resp.message || 'Data regenerated');
+                reloadPage();
+            } else {
+                showToast(resp.message || 'Failed', 'danger');
+            }
+        }).catch(function() { showToast('Network error', 'danger'); });
+    });
+}
+
+// Add Participant (AJAX)
+document.getElementById('add-participant-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+    const data = {};
+    formData.forEach((v, k) => { if (k !== 'csrf_token') data[k] = v; });
+    ajaxPost('/surveys/' + SURVEY_ID + '/participants/add', data).then(function(resp) {
+        if (resp.success) {
+            showToast(resp.message || 'Participant added');
+            reloadPage();
+        } else {
+            showToast(resp.message || 'Failed', 'danger');
+        }
+    }).catch(function() { showToast('Network error', 'danger'); });
+});
+
+// ==================== DUMMY WEIGHT/CAPACITY TOGGLES ====================
+{% if survey.use_weights %}
+document.getElementById('dummy-weight-random').addEventListener('change', function() {
+    document.getElementById('dummy-weight-input').disabled = this.checked;
+    if (this.checked) document.getElementById('dummy-weight-input').value = '';
+});
+document.getElementById('dummy-weight-input').disabled = true;
+{% endif %}
+
+{% if survey.require_user_capacity %}
+document.getElementById('dummy-capacity-random').addEventListener('change', function() {
+    document.getElementById('dummy-capacity-input').disabled = this.checked;
+    if (this.checked) document.getElementById('dummy-capacity-input').value = '';
+});
+document.getElementById('dummy-capacity-input').disabled = true;
+{% endif %}
+
+// ==================== UTILS ====================
 function copyInviteLink() {
     const input = document.getElementById('invite-link');
     input.select();
     document.execCommand('copy');
-    alert('Invite link copied to clipboard!');
+    showToast('Invite link copied!', 'info');
 }
 
 function toggleModeFields() {
