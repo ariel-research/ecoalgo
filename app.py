@@ -346,6 +346,84 @@ def survey_add_item(survey_id):
     return redirect(url_for('survey_edit', survey_id=survey.id))
 
 
+@app.route('/surveys/<int:survey_id>/items/import-csv', methods=['POST'])
+@auth_required()
+@roles_accepted('admin', 'moderator')
+def survey_import_items_csv(survey_id):
+    """Import items from a CSV file."""
+    import csv, io
+    survey = Survey.query.get_or_404(survey_id)
+    if survey.creator_id != current_user.id and not current_user.has_role('admin'):
+        abort(403)
+
+    f = request.files.get('csv_file')
+    if not f or not f.filename:
+        return jsonify(success=False, message='No file selected.')
+    if not f.filename.lower().endswith('.csv'):
+        return jsonify(success=False, message='File must be a .csv file.')
+
+    # Build expected column order based on survey settings
+    # name, [capacity], [weight], [description]
+    try:
+        text = f.read().decode('utf-8-sig')  # utf-8-sig strips BOM if present
+    except UnicodeDecodeError:
+        return jsonify(success=False, message='File must be UTF-8 encoded.')
+
+    reader = csv.reader(io.StringIO(text))
+    added = 0
+    errors = []
+    for i, row in enumerate(reader, start=1):
+        if not row or all(cell.strip() == '' for cell in row):
+            continue  # skip blank rows
+        col = 0
+        name = row[col].strip() if col < len(row) else ''
+        col += 1
+        if not name:
+            errors.append(f'Row {i}: missing item name.')
+            continue
+
+        capacity = 1
+        if survey.use_item_capacity:
+            raw = row[col].strip() if col < len(row) else ''
+            col += 1
+            try:
+                capacity = int(raw) if raw else 1
+            except ValueError:
+                errors.append(f'Row {i}: invalid capacity "{raw}".')
+                continue
+
+        weight = 1.0
+        if survey.use_weights:
+            raw = row[col].strip() if col < len(row) else ''
+            col += 1
+            try:
+                weight = float(raw) if raw else 1.0
+            except ValueError:
+                errors.append(f'Row {i}: invalid weight "{raw}".')
+                continue
+
+        description = row[col].strip() if col < len(row) else ''
+
+        db.session.add(SurveyItem(
+            survey_id=survey.id,
+            name=name,
+            description=description or None,
+            capacity=capacity,
+            weight=weight
+        ))
+        added += 1
+
+    if added == 0 and errors:
+        db.session.rollback()
+        return jsonify(success=False, message='No items imported. Errors: ' + '; '.join(errors))
+
+    db.session.commit()
+    msg = f'{added} item(s) imported.'
+    if errors:
+        msg += ' Skipped rows: ' + '; '.join(errors)
+    return jsonify(success=True, message=msg)
+
+
 @app.route('/surveys/<int:survey_id>/items/<int:item_id>/delete', methods=['POST'])
 @auth_required()
 @roles_accepted('admin', 'moderator')

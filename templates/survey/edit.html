@@ -158,6 +158,25 @@
                     </div>
                 </form>
 
+                <!-- Import CSV -->
+                <div class="mb-3">
+                    <a class="text-decoration-none small" data-bs-toggle="collapse" href="#csv-import-section" role="button">
+                        &#8595; Import items from CSV
+                    </a>
+                    <div class="collapse" id="csv-import-section">
+                        <div class="card card-body bg-light mt-1 p-2">
+                            <div class="text-muted small mb-2">
+                                Expected columns (no header row):
+                                <strong>name</strong>{% if survey.use_item_capacity %}, <strong>capacity</strong>{% endif %}{% if survey.use_weights %}, <strong>weight</strong>{% endif %}, <strong>description</strong> (optional)
+                            </div>
+                            <div class="d-flex gap-2 align-items-center">
+                                <input type="file" class="form-control form-control-sm" id="csv-file-input" accept=".csv">
+                                <button type="button" class="btn btn-sm btn-success text-nowrap" onclick="importCSV()">Import</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Items List -->
                 <div id="items-table-container">
                 {% if survey.items.count() > 0 %}
@@ -730,6 +749,30 @@ document.getElementById('dummy-capacity-random').addEventListener('change', func
 });
 document.getElementById('dummy-capacity-input').disabled = true;
 {% endif %}
+
+// ==================== CSV IMPORT ====================
+function importCSV() {
+    const input = document.getElementById('csv-file-input');
+    if (!input.files.length) {
+        showToast('Please select a CSV file.', 'danger');
+        return;
+    }
+    const formData = new FormData();
+    formData.append('csrf_token', CSRF_TOKEN);
+    formData.append('csv_file', input.files[0]);
+    fetch('/surveys/' + SURVEY_ID + '/items/import-csv', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData
+    }).then(r => r.json()).then(function(resp) {
+        if (resp.success) {
+            showToast(resp.message, 'success');
+            reloadPage();
+        } else {
+            showToast(resp.message || 'Import failed', 'danger');
+        }
+    }).catch(function() { showToast('Network error', 'danger'); });
+}
 
 // ==================== UTILS ====================
 function copyInviteLink() {
