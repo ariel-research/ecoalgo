@@ -41,16 +41,21 @@
                     </li>
                 </ul>
             </div>
-            <div class="card-footer">
+            <div class="card-footer d-flex gap-2">
                 <a href="{{ url_for('survey_rank', survey_id=participation.survey.id) }}" class="btn btn-primary">
                     {% if not participation.survey.is_open %}
-                    Visit
+                    View Ranking
                     {% elif participation.rankings.count() > 0 %}
                     Edit Ranking
                     {% else %}
                     Submit Ranking
                     {% endif %}
                 </a>
+                {% if participation.survey.allocation_results.count() > 0 %}
+                <a href="{{ url_for('survey_my_results', survey_id=participation.survey.id) }}" class="btn btn-outline-primary">
+                    My Results
+                </a>
+                {% endif %}
             </div>
         </div>
     </div>
