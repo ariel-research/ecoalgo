@@ -67,6 +67,11 @@ def create_admin_user():
         print("Default admin created: admin@example.com / adminpassword")
 
 
+def is_valid_weight(w):
+    """Weight must be a positive multiple of 0.5 (e.g. 0.5, 1.0, 1.5, 2.0...)."""
+    return w > 0 and (w * 2) % 1 == 0
+
+
 @app.route('/')
 def home():
     return render_template('home.html')
@@ -593,6 +598,9 @@ def survey_add_dummy_users(survey_id):
     manual_weight = request.form.get('dummy_weight', type=float)
     manual_capacity = request.form.get('dummy_capacity', type=int)
 
+    if survey.use_weights and manual_weight is not None and not is_valid_weight(manual_weight):
+        return jsonify(success=False, message='Weight must be a whole number or half (e.g. 1, 1.5, 2, 2.5).')
+
     # Find the next dummy user number
     existing_dummies = SurveyParticipant.query.filter_by(survey_id=survey.id, is_dummy=True).count()
 
@@ -605,7 +613,7 @@ def survey_add_dummy_users(survey_id):
         )
         if survey.use_weights:
             if weight_random or manual_weight is None:
-                participant.user_weight = round(random.uniform(0.5, 5.0), 1)
+                participant.user_weight = random.choice([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0])
             else:
                 participant.user_weight = manual_weight
         if survey.require_user_capacity:
@@ -708,7 +716,7 @@ def survey_regenerate_dummy_data(survey_id):
     for participant in dummies:
         # Regenerate user weight and capacity if required
         if survey.use_weights:
-            participant.user_weight = round(random.uniform(0.5, 5.0), 1)
+            participant.user_weight = random.choice([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0])
         if survey.require_user_capacity:
             participant.user_capacity = random.randint(1, max(1, len(items)))
 
@@ -769,9 +777,18 @@ def survey_edit_dummy_ratings(survey_id, participant_id):
                 if rank:
                     db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id, rank=rank))
         elif survey.ranking_mode in ('budget', 'points'):
+            total_assigned = 0
+            rows = []
             for item in items:
                 points = request.form.get(f'points_{item.id}', 0, type=int)
-                db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id, points=points))
+                total_assigned += points
+                rows.append(ItemRanking(participant_id=participant.id, item_id=item.id, points=points))
+            if total_assigned != survey.total_points:
+                db.session.rollback()
+                flash(f'Total points must equal {survey.total_points}. You assigned {total_assigned}.', 'danger')
+                return redirect(request.url)
+            for row in rows:
+                db.session.add(row)
         else:
             for item in items:
                 rating = request.form.get(f'rating_{item.id}', type=int)
@@ -850,7 +867,10 @@ def survey_update_participant_field(survey_id, participant_id):
 
     if field == 'user_weight':
         try:
-            participant.user_weight = float(value) if value else None
+            w = float(value) if value else None
+            if w is not None and not is_valid_weight(w):
+                return jsonify(success=False, message='Weight must be a whole number or half (e.g. 1, 1.5, 2, 2.5).')
+            participant.user_weight = w
         except (ValueError, TypeError):
             return jsonify(success=False, message='Invalid weight value.')
     elif field == 'user_capacity':
@@ -1091,8 +1111,8 @@ def survey_rank(survey_id):
         # Process user weight if weights are enabled
         if survey.use_weights:
             user_weight = request.form.get('user_weight', type=float)
-            if user_weight is None or user_weight <= 0:
-                flash('Please enter a valid weight.', 'danger')
+            if user_weight is None or not is_valid_weight(user_weight):
+                flash('Weight must be a whole number or half (e.g. 1, 1.5, 2, 2.5).', 'danger')
                 return redirect(url_for('survey_rank', survey_id=survey.id))
             participant.user_weight = user_weight
 

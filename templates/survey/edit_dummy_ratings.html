@@ -20,22 +20,32 @@
                     {{ ordinal_drag_drop(survey.items, rankings, is_open=True) }}
 
                     {% elif survey.ranking_mode in ('budget', 'points') %}
-                    <p class="mb-3">Distribute <strong>{{ survey.total_points }}</strong> points among items:</p>
+                    <p class="mb-3">Distribute <strong>{{ survey.total_points }}</strong> points among items.</p>
+                    <div class="alert alert-info mb-3">
+                        <strong>Points remaining: <span id="points-remaining">{{ survey.total_points }}</span></strong>
+                    </div>
                     <table class="table">
                         <thead>
                             <tr>
                                 <th>Item</th>
-                                <th style="width: 120px;">Points</th>
+                                <th style="min-width: 200px;">Points</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for item in survey.items %}
+                            {% set saved_points = rankings.get(item.id).points if rankings.get(item.id) else 0 %}
                             <tr>
                                 <td><strong>{{ item.name }}</strong></td>
                                 <td>
-                                    <input type="number" class="form-control" name="points_{{ item.id }}"
-                                           value="{{ rankings.get(item.id).points if rankings.get(item.id) else 0 }}"
+                                    <input type="number" class="form-control points-input mb-1"
+                                           name="points_{{ item.id }}"
+                                           data-item-id="{{ item.id }}"
+                                           value="{{ saved_points }}"
                                            min="0" max="{{ survey.total_points }}">
+                                    <input type="range" class="form-range points-slider"
+                                           data-item-id="{{ item.id }}"
+                                           value="{{ saved_points }}"
+                                           min="0" max="{{ survey.total_points }}" step="1">
                                 </td>
                             </tr>
                             {% endfor %}
@@ -75,4 +85,55 @@
         </div>
     </div>
 </div>
+
+{% if survey.ranking_mode in ('budget', 'points') %}
+<script>
+(function () {
+    const TOTAL = {{ survey.total_points }};
+    const submitBtn = document.querySelector('[type=submit]');
+
+    function getUsed() {
+        let used = 0;
+        document.querySelectorAll('.points-input').forEach(inp => { used += parseInt(inp.value) || 0; });
+        return used;
+    }
+
+    function updateRemaining() {
+        const remaining = TOTAL - getUsed();
+        const display = document.getElementById('points-remaining');
+        display.textContent = remaining;
+        const alert = display.parentElement;
+        alert.classList.remove('alert-info', 'alert-success', 'alert-danger');
+        alert.classList.add(remaining === 0 ? 'alert-success' : 'alert-danger');
+        if (submitBtn) submitBtn.disabled = (remaining !== 0);
+    }
+
+    function syncFromNumber(numInput) {
+        const slider = document.querySelector('.points-slider[data-item-id="' + numInput.dataset.itemId + '"]');
+        if (slider) slider.value = numInput.value;
+        updateRemaining();
+    }
+
+    function syncFromSlider(slider) {
+        const numInput = document.querySelector('.points-input[data-item-id="' + slider.dataset.itemId + '"]');
+        const prevValue = parseInt(numInput ? numInput.value : 0) || 0;
+        const remaining = TOTAL - getUsed();
+        const clamped = Math.min(parseInt(slider.value) || 0, prevValue + Math.max(0, remaining));
+        slider.value = clamped;
+        if (numInput) numInput.value = clamped;
+        updateRemaining();
+    }
+
+    document.querySelectorAll('.points-input').forEach(inp => {
+        inp.addEventListener('input', () => syncFromNumber(inp));
+        inp.addEventListener('change', () => syncFromNumber(inp));
+    });
+    document.querySelectorAll('.points-slider').forEach(slider => {
+        slider.addEventListener('input', () => syncFromSlider(slider));
+    });
+
+    updateRemaining();
+})();
+</script>
+{% endif %}
 {% endblock %}
