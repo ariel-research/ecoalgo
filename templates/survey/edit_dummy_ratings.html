@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "survey/_macros.html" import ordinal_drag_drop %}
 
 {% block title %}Edit Ratings - {{ participant.dummy_name }}{% endblock %}
 
@@ -15,30 +16,8 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                     {% if survey.ranking_mode == 'ordinal' %}
-                    <p class="mb-3">Assign ranks from 1 (most preferred) to {{ survey.items.count() }} (least preferred):</p>
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Item</th>
-                                <th style="width: 100px;">Rank</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item in survey.items %}
-                            <tr>
-                                <td><strong>{{ item.name }}</strong></td>
-                                <td>
-                                    <select class="form-select" name="rank_{{ item.id }}">
-                                        <option value="">-</option>
-                                        {% for i in range(1, survey.items.count() + 1) %}
-                                        <option value="{{ i }}" {{ 'selected' if rankings.get(item.id) and rankings[item.id].rank == i }}>{{ i }}</option>
-                                        {% endfor %}
-                                    </select>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                    <p class="mb-3">Drag items to rank them. <strong>#1</strong> is most preferred.</p>
+                    {{ ordinal_drag_drop(survey.items, rankings, is_open=True) }}
 
                     {% elif survey.ranking_mode in ('budget', 'points') %}
                     <p class="mb-3">Distribute <strong>{{ survey.total_points }}</strong> points among items:</p>

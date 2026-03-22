@@ -21,7 +21,7 @@
                     <small class="text-muted">Run at {{ result.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
                 </div>
                 <div class="card-body">
-                    {% if result.items %}
+                    {% if result.allocated_items %}
                     <table class="table">
                         <thead>
                             <tr>
@@ -30,7 +30,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for item in result.items %}
+                            {% for item in result.allocated_items %}
                             <tr>
                                 <td><strong>{{ item.name }}</strong></td>
                                 <td>{{ item.label }}</td>

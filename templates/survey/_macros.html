@@ -1,0 +1,59 @@
+{% macro ordinal_drag_drop(items, rankings, is_open=True) %}
+<ul id="sortable-list" class="list-group mb-4 {% if not is_open %}pe-none opacity-75{% endif %}">
+    {% for item in items %}
+    <li class="list-group-item d-flex align-items-center gap-3"
+        data-item-id="{{ item.id }}">
+        {% if is_open %}
+        <span class="drag-handle text-muted" style="cursor:grab; font-size:1.2rem;">&#9776;</span>
+        {% endif %}
+        <span class="rank-badge badge bg-primary rounded-pill" style="min-width:2rem;">?</span>
+        <div class="flex-grow-1">
+            <strong>{{ item.name }}</strong>
+            {% if item.description %}
+            <div class="text-muted small">{{ item.description }}</div>
+            {% endif %}
+        </div>
+        <input type="hidden" name="rank_{{ item.id }}" value="">
+    </li>
+    {% endfor %}
+</ul>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+(function () {
+    var savedRanks = {
+        {% for item_id, r in rankings.items() %}
+        "{{ item_id }}": {{ r.rank }},
+        {% endfor %}
+    };
+
+    var list = document.getElementById('sortable-list');
+    var items = Array.from(list.querySelectorAll('li[data-item-id]'));
+
+    if (Object.keys(savedRanks).length > 0) {
+        items.sort(function (a, b) {
+            return (savedRanks[a.dataset.itemId] || 9999) - (savedRanks[b.dataset.itemId] || 9999);
+        });
+        items.forEach(function (li) { list.appendChild(li); });
+    }
+
+    updateRanks();
+
+    {% if is_open %}
+    Sortable.create(list, {
+        handle: '.drag-handle',
+        animation: 150,
+        onEnd: updateRanks
+    });
+    {% endif %}
+
+    function updateRanks() {
+        list.querySelectorAll('li[data-item-id]').forEach(function (li, index) {
+            var rank = index + 1;
+            li.querySelector('input[type=hidden]').value = rank;
+            li.querySelector('.rank-badge').textContent = rank;
+        });
+    }
+})();
+</script>
+{% endmacro %}

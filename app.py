@@ -1132,7 +1132,7 @@ def survey_my_results(survey_id):
         user_results.append({
             'algorithm': r.algorithm,
             'created_at': r.created_at,
-            'items': explained_items,
+            'allocated_items': explained_items,
             'total_value': total_value
         })
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "survey/_macros.html" import ordinal_drag_drop %}
 
 {% block title %}Rank Items - {{ survey.title }}{% endblock %}
 
@@ -66,33 +67,9 @@
                     {% endif %}
 
                     {% if survey.ranking_mode == 'ordinal' %}
-                    <!-- Ordinal Ranking -->
-                    <p class="mb-3">Rank the items from 1 (most preferred) to {{ survey.items.count() }} (least preferred):</p>
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Item</th>
-                                <th>Description</th>
-                                <th style="width: 100px;">Rank</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item in survey.items %}
-                            <tr>
-                                <td><strong>{{ item.name }}</strong></td>
-                                <td>{{ item.description or '-' }}</td>
-                                <td>
-                                    <select class="form-select" name="rank_{{ item.id }}" {{ 'disabled' if not survey.is_open }}>
-                                        <option value="">-</option>
-                                        {% for i in range(1, survey.items.count() + 1) %}
-                                        <option value="{{ i }}" {{ 'selected' if rankings.get(item.id) and rankings[item.id].rank == i }}>{{ i }}</option>
-                                        {% endfor %}
-                                    </select>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                    <!-- Ordinal Ranking (drag & drop) -->
+                    <p class="mb-3">Drag items to rank them. <strong>#1</strong> is most preferred.</p>
+                    {{ ordinal_drag_drop(survey.items, rankings, survey.is_open) }}
 
                     {% elif survey.ranking_mode in ('budget', 'points') %}
                     <!-- Budget-based Ranking -->
