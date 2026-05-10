@@ -37,7 +37,39 @@
             </div>
         </div>
         <div class="card-body">
-            {% if result.data and result.data['allocation'] %}
+            {% if result.data and result.data.get('committees') %}
+            <!-- Approval Voting: committee result -->
+            <p class="text-muted mb-2">
+                Committee size: <strong>{{ result.data['committeesize'] }}</strong>
+                {% if result.data['committees'] | length > 1 %}
+                <span class="ms-2">({{ result.data['committees'] | length }} tied winning committees)</span>
+                {% endif %}
+            </p>
+            {% for committee in result.data['committees'] %}
+            <div class="mb-2">
+                {% if result.data['committees'] | length > 1 %}
+                <small class="text-muted">Committee {{ loop.index }}:</small><br>
+                {% endif %}
+                {% for item in committee %}
+                <span class="badge bg-success me-1 mb-1 fs-6">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Summary</h6>
+                            <ul class="mb-0">
+                                <li>Voters: {{ result.data['participants'] | length }}</li>
+                                <li>Candidates: {{ result.data['items'] | length }}</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {% elif result.data and result.data.get('allocation') %}
             <div class="table-responsive">
                 <table class="table table-striped">
                     <thead>

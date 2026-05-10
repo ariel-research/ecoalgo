@@ -12,11 +12,13 @@
         <span class="badge bg-{{ 'success' if survey.is_open else 'danger' }}">
             {{ 'Open' if survey.is_open else 'Closed' }}
         </span>
-        <span class="badge bg-{{ 'info' if survey.ranking_mode == 'ordinal' else ('secondary' if survey.ranking_mode in ('budget', 'points') else 'primary') }}">
+        <span class="badge bg-{{ 'info' if survey.ranking_mode == 'ordinal' else ('secondary' if survey.ranking_mode in ('budget', 'points') else ('success' if survey.ranking_mode == 'approval' else 'primary')) }}">
             {% if survey.ranking_mode == 'ordinal' %}
                 Ordinal Ranking
             {% elif survey.ranking_mode in ('budget', 'points') %}
                 Budget ({{ survey.total_points }} points)
+            {% elif survey.ranking_mode == 'approval' %}
+                Approval Voting
             {% else %}
                 Rating ({{ survey.min_score }}-{{ survey.max_score }})
             {% endif %}
@@ -55,9 +57,9 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-2 mb-3" id="edit-ranking-mode-col" style="{{ 'display:none' if survey.category == 'budget_allocation' else '' }}">
+                <div class="col-md-2 mb-3" id="edit-ranking-mode-col" style="{{ 'display:none' if survey.category in ('budget_allocation', 'approval_voting') else '' }}">
                     <label for="ranking_mode" class="form-label">Mode</label>
-                    <select class="form-select" id="ranking_mode" name="ranking_mode" onchange="toggleModeFields()" {{ 'disabled' if survey.category == 'budget_allocation' }}>
+                    <select class="form-select" id="ranking_mode" name="ranking_mode" onchange="toggleModeFields()" {{ 'disabled' if survey.category in ('budget_allocation', 'approval_voting') }}>
                         <option value="ordinal" {{ 'selected' if survey.ranking_mode == 'ordinal' }}>Ordinal</option>
                         <option value="rating"  {{ 'selected' if survey.ranking_mode == 'rating' }}>Rating</option>
                     </select>
@@ -449,9 +451,14 @@
                             {% endif %}
                         </td>
                         {% for item in items %}
-                        <td class="text-center {% if row.participant.is_dummy %}editable-cell{% endif %}"
-                            {% if row.participant.is_dummy %}data-field="rating" data-participant-id="{{ row.participant.id }}" data-item-id="{{ item.id }}"{% endif %}>
-                            {{ row.ratings.get(item.id, '-') }}
+                        {% set editable = row.participant.is_dummy and survey.ranking_mode != 'approval' %}
+                        <td class="text-center {% if editable %}editable-cell{% endif %}"
+                            {% if editable %}data-field="rating" data-participant-id="{{ row.participant.id }}" data-item-id="{{ item.id }}"{% endif %}>
+                            {% if survey.ranking_mode == 'approval' %}
+                                {{ '✓' if row.ratings.get(item.id) == 1 else ('✗' if row.ratings.get(item.id) == 0 else '-') }}
+                            {% else %}
+                                {{ row.ratings.get(item.id, '-') }}
+                            {% endif %}
                         </td>
                         {% endfor %}
                     </tr>
@@ -487,6 +494,14 @@
                         {% endfor %}
                     </select>
                 </div>
+                {% if survey.category == 'approval_voting' %}
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Committee Size</label>
+                    <input type="number" class="form-control" name="committeesize"
+                           value="{{ [1, survey.items.count() // 2] | max }}"
+                           min="1" max="{{ survey.items.count() }}">
+                </div>
+                {% endif %}
                 <div class="col-auto">
                     <button type="submit" class="btn btn-primary">Run Algorithm</button>
                 </div>
@@ -906,15 +921,17 @@ function algoShowDescription(sel) {
 
 // ==================== CATEGORY CHANGE (settings form) ====================
 function editOnCategoryChange(cat) {
-    const isBudget = cat === 'budget_allocation';
-    const modeCol  = document.getElementById('edit-ranking-mode-col');
-    const modeSel  = document.getElementById('ranking_mode');
-    const budgetFld = document.getElementById('budget-field');
+    const isBudget   = cat === 'budget_allocation';
+    const isApproval = cat === 'approval_voting';
+    const hideMode   = isBudget || isApproval;
+    const modeCol    = document.getElementById('edit-ranking-mode-col');
+    const modeSel    = document.getElementById('ranking_mode');
+    const budgetFld  = document.getElementById('budget-field');
 
-    modeCol.style.display  = isBudget ? 'none' : '';
-    modeSel.disabled       = isBudget;
+    modeCol.style.display   = hideMode ? 'none' : '';
+    modeSel.disabled        = hideMode;
     budgetFld.style.display = isBudget ? '' : 'none';
-    if (isBudget) {
+    if (hideMode) {
         document.getElementById('rating-field').style.display = 'none';
     } else {
         toggleModeFields();

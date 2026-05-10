@@ -52,6 +52,32 @@
                         </tbody>
                     </table>
 
+                    {% elif survey.ranking_mode == 'approval' %}
+                    <p class="mb-3">Check every item this participant <strong>approves</strong>:</p>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th class="text-center" style="width:90px;">Approve</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in survey.items %}
+                            {% set approved = rankings.get(item.id) and rankings.get(item.id).points > 0 %}
+                            <tr>
+                                <td><strong>{{ item.name }}</strong></td>
+                                <td class="text-center">
+                                    <input type="checkbox"
+                                           class="form-check-input"
+                                           name="approved_{{ item.id }}"
+                                           value="on"
+                                           {{ 'checked' if approved }}>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+
                     {% else %}
                     <p class="mb-3">Score each item from <strong>{{ survey.min_score }}</strong> to <strong>{{ survey.max_score }}</strong>:</p>
                     <table class="table">

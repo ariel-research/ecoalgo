@@ -12,10 +12,18 @@ CATEGORIES = {
     'fair_division':          'Fair Division',
     'capacitated_allocation': 'Capacitated & Weighted Allocation',
     'budget_allocation':      'Budget Allocation',
+    'approval_voting':        'Approval Voting',
 }
 
 
 # ── Builder helpers ────────────────────────────────────────────────────────────
+#
+# Each builder receives a Survey ORM object and returns the input object
+# expected by the algorithm.  fairpyx builders return an Instance;
+# abcvoting builders return a Profile.
+
+
+
 
 def _survey_to_valuations(survey):
     items = survey.items.all()
@@ -76,6 +84,23 @@ def build_capacitated_instance(survey):
         agent_capacities=agent_capacities,
         agent_target_weights=agent_weights,
     )
+
+
+def build_approval_profile(survey):
+    """abcvoting Profile: each participant maps to the set of items they approved (points == 1)."""
+    from abcvoting import preferences as abcpref
+    items = list(survey.items.all())
+    item_to_idx = {item.id: idx for idx, item in enumerate(items)}
+    profile = abcpref.Profile(
+        num_cand=len(items),
+        cand_names=[item.name for item in items],
+    )
+    for p in survey.participants.all():
+        approved = {item_to_idx[r.item_id]
+                    for r in p.rankings.all()
+                    if r.points and r.points > 0}
+        profile.add_voter(approved)
+    return profile
 
 
 # ── Algorithm registry ─────────────────────────────────────────────────────────
@@ -257,6 +282,18 @@ ALGORITHMS = {
         'module':       'fairpyx.algorithms.iterated_maximum_matching',
         'function':     'iterated_maximum_matching_unadjusted',
         'builder':      build_capacitated_instance,
+    },
+
+    # ── Approval Voting ────────────────────────────────────────────────────────
+
+    'pav': {
+        'category':     'approval_voting',
+        'display_name': 'Proportional Approval Voting (PAV)',
+        'group':        'Proportional Rules',
+        'description':  'Selects a winning committee by maximising a proportional score; voters get diminishing credit for each additional approved committee member.',
+        'runner':       'abcvoting',
+        'rule_id':      'pav',
+        'builder':      build_approval_profile,
     },
 }
 

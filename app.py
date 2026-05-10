@@ -92,6 +92,12 @@ CATEGORY_SETTINGS = {
         'use_item_capacity':      False,
         'ranking_mode':           'budget',   # forced — participants distribute points
     },
+    'approval_voting': {
+        'use_weights':            False,
+        'require_user_capacity':  False,
+        'use_item_capacity':      False,
+        'ranking_mode':           'approval', # forced — participants tick approved items
+    },
 }
 
 
@@ -312,7 +318,7 @@ def survey_edit(survey_id):
         for r in p.rankings.all():
             if survey.ranking_mode == 'ordinal':
                 row['ratings'][r.item_id] = r.rank
-            elif survey.ranking_mode in ('budget', 'points'):
+            elif survey.ranking_mode in ('budget', 'points', 'approval'):
                 row['ratings'][r.item_id] = r.points
             else:
                 row['ratings'][r.item_id] = r.rating
@@ -849,6 +855,13 @@ def survey_add_dummy_users(survey_id):
                     points=pts
                 )
                 db.session.add(ranking)
+        elif survey.ranking_mode == 'approval':
+            for item in items:
+                db.session.add(ItemRanking(
+                    participant_id=participant.id,
+                    item_id=item.id,
+                    points=random.randint(0, 1),
+                ))
         else:
             # Rating mode: random score for each item
             for item in items:
@@ -935,6 +948,10 @@ def survey_regenerate_dummy_data(survey_id):
             random.shuffle(points_list)
             for item, pts in zip(items, points_list):
                 db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id, points=pts))
+        elif survey.ranking_mode == 'approval':
+            for item in items:
+                db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id,
+                                           points=random.randint(0, 1)))
         else:
             for item in items:
                 rating = random.randint(survey.min_score, survey.max_score)
@@ -984,6 +1001,11 @@ def survey_edit_dummy_ratings(survey_id, participant_id):
                 return redirect(request.url)
             for row in rows:
                 db.session.add(row)
+        elif survey.ranking_mode == 'approval':
+            for item in items:
+                approved = request.form.get(f'approved_{item.id}') == 'on'
+                db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id,
+                                           points=1 if approved else 0))
         else:
             for item in items:
                 rating = request.form.get(f'rating_{item.id}', type=int)
@@ -1035,7 +1057,7 @@ def survey_update_rating(survey_id):
 
     if survey.ranking_mode == 'ordinal':
         ranking.rank = val
-    elif survey.ranking_mode in ('budget', 'points'):
+    elif survey.ranking_mode in ('budget', 'points', 'approval'):
         ranking.points = val
     else:
         ranking.rating = val
@@ -1117,6 +1139,37 @@ def survey_run_algorithm(survey_id):
         return redirect(url_for('survey_edit', survey_id=survey.id))
 
     try:
+        if entry.get('runner') == 'abcvoting':
+            from abcvoting import abcrules
+            n_items = survey.items.count()
+            committeesize = request.form.get('committeesize', type=int)
+            if not committeesize or committeesize < 1:
+                committeesize = max(1, n_items // 2)
+            committeesize = min(committeesize, n_items)
+
+            profile = entry['builder'](survey)
+            committees = abcrules.compute(entry['rule_id'], profile, committeesize=committeesize)
+
+            items = survey.items.all()
+            result_data = {
+                'committees':    [[profile.cand_names[c] for c in comm] for comm in committees],
+                'committeesize': committeesize,
+                'algorithm':     algorithm,
+                'items':         [item.name for item in items],
+                'participants':  [p.get_display_name() for p in survey.participants.all()
+                                  if p.rankings.count() > 0],
+            }
+            db.session.add(AllocationResult(
+                survey_id=survey.id,
+                category=category,
+                algorithm=algorithm,
+                result_json=json.dumps(result_data),
+                logs=None,
+            ))
+            db.session.commit()
+            flash(f'"{entry["display_name"]}" completed successfully!', 'success')
+            return redirect(url_for('survey_results', survey_id=survey.id))
+
         import importlib, io, logging, inspect
         from fairpyx import divide
         from fairpyx.explanations import SingleExplanationLogger
@@ -1346,6 +1399,14 @@ def survey_rank(survey_id):
                 db.session.rollback()
                 flash(f'Total points must equal {survey.total_points}. You assigned {total_assigned}.', 'danger')
                 return redirect(url_for('survey_rank', survey_id=survey.id))
+        elif survey.ranking_mode == 'approval':
+            for item in items:
+                approved = request.form.get(f'approved_{item.id}') == 'on'
+                db.session.add(ItemRanking(
+                    participant_id=participant.id,
+                    item_id=item.id,
+                    points=1 if approved else 0,
+                ))
         else:
             # Process rating mode (score each item independently)
             for item in items:
