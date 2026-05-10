@@ -1148,7 +1148,12 @@ def survey_run_algorithm(survey_id):
             committeesize = min(committeesize, n_items)
 
             profile = entry['builder'](survey)
-            committees = abcrules.compute(entry['rule_id'], profile, committeesize=committeesize)
+            extra_kwargs = {}
+            if 'completion' in entry.get('extra_params', []):
+                completion = request.form.get('completion', 'seqphragmen')
+                extra_kwargs['completion'] = None if completion == 'none' else completion
+            committees = abcrules.compute(entry['rule_id'], profile, committeesize=committeesize,
+                                          **extra_kwargs)
 
             items = survey.items.all()
             result_data = {

@@ -495,11 +495,20 @@
                     </select>
                 </div>
                 {% if survey.category == 'approval_voting' %}
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label fw-semibold">Committee Size</label>
                     <input type="number" class="form-control" name="committeesize"
                            value="{{ [1, survey.items.count() // 2] | max }}"
                            min="1" max="{{ survey.items.count() }}">
+                </div>
+                <div class="col-md-3" id="completion-field" style="display:none">
+                    <label class="form-label fw-semibold">Completion Method</label>
+                    <select class="form-select" name="completion">
+                        <option value="seqphragmen">Seq. Phragmén (default)</option>
+                        <option value="av">Approval Voting</option>
+                        <option value="increment">Increment</option>
+                        <option value="none">None (may be partial)</option>
+                    </select>
                 </div>
                 {% endif %}
                 <div class="col-auto">
@@ -917,6 +926,11 @@ function algoShowDescription(sel) {
     const desc = opt && opt.dataset.description;
     if (desc) { descDiv.textContent = desc; descDiv.style.display = ''; }
     else { descDiv.style.display = 'none'; }
+
+    const completionField = document.getElementById('completion-field');
+    if (completionField) {
+        completionField.style.display = (opt && opt.value === 'equal_shares') ? '' : 'none';
+    }
 }
 
 // ==================== CATEGORY CHANGE (settings form) ====================

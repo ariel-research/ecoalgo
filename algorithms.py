@@ -295,6 +295,43 @@ ALGORITHMS = {
         'rule_id':      'pav',
         'builder':      build_approval_profile,
     },
+    'seqpav': {
+        'category':     'approval_voting',
+        'display_name': 'Sequential PAV',
+        'group':        'Sequential Rules',
+        'description':  'Greedy sequential variant of PAV: adds one candidate at a time, choosing whichever maximises the PAV score increment.',
+        'runner':       'abcvoting',
+        'rule_id':      'seqpav',
+        'builder':      build_approval_profile,
+    },
+    'seqcc': {
+        'category':     'approval_voting',
+        'display_name': 'Sequential Chamberlin-Courant (SeqCC)',
+        'group':        'Sequential Rules',
+        'description':  'Greedy sequential variant of the Chamberlin-Courant rule: adds the candidate that maximises the number of voters who have at least one approved committee member.',
+        'runner':       'abcvoting',
+        'rule_id':      'seqcc',
+        'builder':      build_approval_profile,
+    },
+    'seqphragmen': {
+        'category':     'approval_voting',
+        'display_name': 'Sequential Phragmén',
+        'group':        'Sequential Rules',
+        'description':  'Load-balancing rule: seats are allocated one by one to the candidate whose supporters carry the least accumulated load, promoting proportional representation.',
+        'runner':       'abcvoting',
+        'rule_id':      'seqphragmen',
+        'builder':      build_approval_profile,
+    },
+    'equal_shares': {
+        'category':     'approval_voting',
+        'display_name': 'Method of Equal Shares (Rule X)',
+        'group':        'Budget-Based Rules',
+        'description':  'Gives each voter an equal virtual budget; candidates are elected when their supporters collectively afford them. A completion method fills any remaining seats.',
+        'runner':       'abcvoting',
+        'rule_id':      'equal-shares',
+        'builder':      build_approval_profile,
+        'extra_params': ['completion'],
+    },
 }
 
 
