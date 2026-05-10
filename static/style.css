@@ -1,27 +1,27 @@
-/* ── Soft teal / light green-blue pastel palette ───────────────────────────── */
+/* ── Modern semi-formal palette — blue-600 navbar, Rubik font ───────────────── */
 :root {
-  --c-primary:       #5B9E90;   /* muted teal — light green-blue */
-  --c-primary-dark:  #3F7E71;   /* deeper teal                   */
-  --c-primary-light: #82BBB0;   /* lighter tint                  */
-  --c-primary-pale:  #EAF6F4;   /* barely-there teal bg          */
-  --c-navbar:        #5ba79c;   /* dark teal for navbar          */
-  --c-bg:            #F7FCFB;   /* near-white with teal hint     */
-  --c-bg-subtle:     #EAF4F2;   /* soft teal panel               */
-  --c-border:        #C6DDD9;   /* teal-tinted border            */
-  --c-text:          #162D2A;   /* dark teal-tinted near-black   */
-  --c-muted:         #6B9A94;   /* medium muted teal             */
-  --c-success:       #2D8653;
-  --c-danger:        #C53030;
-  --c-warning:       #C07D2A;
-  --c-info:          #2B7FAD;
+  --c-primary:       #2563EB;   /* blue-600 — main action colour  */
+  --c-primary-dark:  #1D4ED8;   /* blue-700                       */
+  --c-primary-light: #60A5FA;   /* blue-400                       */
+  --c-primary-pale:  #EFF6FF;   /* blue-50                        */
+  --c-navbar:        #2563EB;   /* blue-600 navbar — colorful, not black */
+  --c-bg:            #F8FAFF;   /* near-white with faint blue hint */
+  --c-bg-subtle:     #EFF6FF;   /* blue-50 for panels             */
+  --c-border:        #DBEAFE;   /* blue-100                       */
+  --c-text:          #1E3A5F;   /* dark navy-blue body text       */
+  --c-muted:         #6B7A99;   /* muted slate-blue               */
+  --c-success:       #16A34A;
+  --c-danger:        #DC2626;
+  --c-warning:       #D97706;
+  --c-info:          #0284C7;
   --radius:          0.5rem;
-  --shadow-sm:       0 1px 4px rgba(22, 45, 42, 0.08);
-  --shadow:          0 4px 16px rgba(22, 45, 42, 0.10);
+  --shadow-sm:       0 1px 3px rgba(30, 58, 95, 0.08), 0 1px 2px rgba(30, 58, 95, 0.04);
+  --shadow:          0 4px 14px rgba(30, 58, 95, 0.10), 0 2px 4px rgba(30, 58, 95, 0.06);
 }
 
 /* ── Typography ─────────────────────────────────────────────────────────────── */
 body {
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-family: 'Rubik', system-ui, sans-serif;
   font-size: 0.9375rem;
   background-color: var(--c-bg);
   color: var(--c-text);
@@ -31,14 +31,14 @@ body {
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-family: 'Rubik', system-ui, sans-serif;
   font-weight: 600;
-  color: var(--c-navbar);
+  color: var(--c-text);
 }
 
-h1 { font-size: 1.8rem;  font-weight: 700; }
-h4 { font-size: 1.15rem; }
-h5 { font-size: 1rem; }
+h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.01em; }
+h4 { font-size: 1.1rem; }
+h5 { font-size: 0.95rem; }
 
 .text-muted { color: var(--c-muted) !important; }
 
@@ -49,17 +49,17 @@ main { flex: 1; }
 .navbar.bg-primary,
 .navbar.navbar-dark.bg-primary {
   background-color: var(--c-navbar) !important;
-  box-shadow: 0 2px 10px rgba(44, 28, 18, 0.15);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.30);
 }
 
 .navbar-brand {
-  font-weight: 700;
-  font-size: 1.15rem;
-  letter-spacing: 0.01em;
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #fff !important;
 }
 
-.navbar-dark .nav-link { opacity: 0.82; transition: opacity 0.15s; }
-.navbar-dark .nav-link:hover { opacity: 1; }
+.navbar-dark .nav-link        { color: rgba(255,255,255,0.82) !important; transition: color 0.15s; }
+.navbar-dark .nav-link:hover  { color: #fff !important; }
 
 /* ── Cards ──────────────────────────────────────────────────────────────────── */
 .card {
@@ -72,8 +72,8 @@ main { flex: 1; }
 .card-header {
   background-color: var(--c-bg-subtle);
   border-bottom: 1px solid var(--c-border);
-  font-weight: 600;
-  font-size: 0.95rem;
+  font-weight: 500;
+  font-size: 0.9rem;
 }
 
 .card.bg-light,
@@ -81,63 +81,39 @@ main { flex: 1; }
 .bg-light { background-color: var(--c-bg-subtle) !important; }
 
 /* ── Buttons ────────────────────────────────────────────────────────────────── */
-.btn {
-  font-weight: 500;
-  border-radius: 0.45rem;
-  letter-spacing: 0.01em;
-}
+.btn { font-weight: 500; border-radius: 0.45rem; font-size: 0.875rem; }
 
 .btn-primary {
-  background-color: var(--c-primary);
-  border-color:     var(--c-primary);
-  color: #fff;
+  background-color: var(--c-primary); border-color: var(--c-primary); color: #fff;
 }
 .btn-primary:hover, .btn-primary:focus {
-  background-color: var(--c-primary-dark);
-  border-color:     var(--c-primary-dark);
-  color: #fff;
+  background-color: var(--c-primary-dark); border-color: var(--c-primary-dark); color: #fff;
 }
 .btn-primary:active {
-  background-color: var(--c-primary-dark) !important;
-  border-color:     var(--c-primary-dark) !important;
+  background-color: var(--c-primary-dark) !important; border-color: var(--c-primary-dark) !important;
 }
 
-.btn-outline-primary {
-  color:        var(--c-primary);
-  border-color: var(--c-primary);
-}
-.btn-outline-primary:hover {
-  background-color: var(--c-primary);
-  border-color:     var(--c-primary);
-  color: #fff;
-}
+.btn-outline-primary { color: var(--c-primary); border-color: var(--c-primary); }
+.btn-outline-primary:hover { background-color: var(--c-primary); border-color: var(--c-primary); color: #fff; }
 
 .btn-success { background-color: var(--c-success); border-color: var(--c-success); color: #fff; }
 .btn-danger  { background-color: var(--c-danger);  border-color: var(--c-danger);  color: #fff; }
 .btn-warning { background-color: var(--c-warning); border-color: var(--c-warning); color: #fff; }
 
 .btn-outline-secondary {
-  color:        var(--c-muted);
-  border-color: var(--c-border);
+  color: var(--c-muted); border-color: var(--c-border); background-color: #fff;
 }
 .btn-outline-secondary:hover {
-  background-color: var(--c-bg-subtle);
-  border-color:     var(--c-muted);
-  color: var(--c-text);
+  background-color: var(--c-bg-subtle); border-color: #BFDBFE; color: var(--c-text);
 }
 
-.btn-outline-danger  { color: var(--c-danger);  border-color: var(--c-danger); }
+.btn-outline-danger  { color: var(--c-danger);  border-color: var(--c-danger);  }
 .btn-outline-danger:hover  { background-color: var(--c-danger);  color: #fff; }
-
 .btn-outline-warning { color: var(--c-warning); border-color: var(--c-warning); }
 .btn-outline-warning:hover { background-color: var(--c-warning); color: #fff; }
 
 /* ── Badges ─────────────────────────────────────────────────────────────────── */
-.badge {
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  border-radius: 0.35rem;
-}
+.badge { font-weight: 500; font-size: 0.75rem; border-radius: 0.3rem; }
 .badge.bg-primary   { background-color: var(--c-primary)  !important; }
 .badge.bg-secondary { background-color: var(--c-muted)    !important; }
 .badge.bg-success   { background-color: var(--c-success)  !important; }
@@ -147,51 +123,31 @@ main { flex: 1; }
 
 /* ── Forms ──────────────────────────────────────────────────────────────────── */
 .form-control, .form-select {
-  border-color:  var(--c-border);
-  border-radius: 0.45rem;
-  background-color: #fff;
-  font-size: 0.9rem;
+  border-color: var(--c-border); border-radius: 0.45rem;
+  background-color: #fff; font-size: 0.9rem; color: var(--c-text);
 }
 .form-control:focus, .form-select:focus {
   border-color: var(--c-primary-light);
-  box-shadow:   0 0 0 0.2rem rgba(91, 158, 144, 0.22);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
-
-.form-check-input:checked {
-  background-color: var(--c-primary);
-  border-color:     var(--c-primary);
-}
-.form-check-input:focus {
-  box-shadow: 0 0 0 0.2rem rgba(91, 158, 144, 0.22);
-}
-
-.form-label { font-weight: 500; font-size: 0.875rem; color: var(--c-text); }
-.form-text  { color: var(--c-muted); }
+.form-check-input:checked { background-color: var(--c-primary); border-color: var(--c-primary); }
+.form-check-input:focus   { box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
+.form-label { font-weight: 500; font-size: 0.875rem; }
+.form-text  { color: var(--c-muted); font-size: 0.8rem; }
 
 /* ── Alerts ─────────────────────────────────────────────────────────────────── */
 .alert { border-radius: var(--radius); font-size: 0.9rem; }
-
-.alert-primary, .alert-warning {
-  background-color: var(--c-primary-pale);
-  border-color: var(--c-primary-light);
-  color: #6B2E0D;
+.alert-primary, .alert-info {
+  background-color: var(--c-primary-pale); border-color: #BFDBFE; color: #1E40AF;
 }
-.alert-success {
-  background-color: #EDFAF3; border-color: #A7DFC4; color: #145232;
-}
-.alert-danger {
-  background-color: #FDF0F0; border-color: #F5B8B8; color: #6B1A1A;
-}
-.alert-info {
-  background-color: #EBF6FD; border-color: #ADDCF5; color: #0D4B6A;
-}
+.alert-success { background-color: #F0FDF4; border-color: #BBF7D0; color: #14532D; }
+.alert-danger  { background-color: #FEF2F2; border-color: #FECACA; color: #7F1D1D; }
+.alert-warning { background-color: #FFFBEB; border-color: #FDE68A; color: #78350F; }
 
 /* ── Tables ─────────────────────────────────────────────────────────────────── */
 .table { border-color: var(--c-border); font-size: 0.9rem; }
 .table > :not(caption) > * > * { border-bottom-color: var(--c-border); }
-.table-striped > tbody > tr:nth-of-type(odd) > * {
-  background-color: rgba(91, 158, 144, 0.05);
-}
+.table-striped > tbody > tr:nth-of-type(odd) > * { background-color: rgba(37,99,235,0.04); }
 .table-bordered { border-color: var(--c-border); }
 .table-sm td, .table-sm th { padding: 0.4rem 0.6rem; }
 
@@ -201,7 +157,7 @@ a:hover { color: var(--c-primary-dark); text-decoration: underline; }
 
 /* ── Footer ─────────────────────────────────────────────────────────────────── */
 .footer {
-  background-color: var(--c-bg-subtle) !important;
+  background-color: #fff !important;
   border-top: 1px solid var(--c-border);
   color: var(--c-muted);
   font-size: 0.85rem;
@@ -209,14 +165,11 @@ a:hover { color: var(--c-primary-dark); text-decoration: underline; }
 
 /* ── Dropdowns ──────────────────────────────────────────────────────────────── */
 .dropdown-menu {
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  font-size: 0.9rem;
+  border: 1px solid var(--c-border); border-radius: var(--radius);
+  box-shadow: var(--shadow); font-size: 0.875rem;
 }
 .dropdown-item:hover, .dropdown-item:focus {
-  background-color: var(--c-primary-pale);
-  color: var(--c-primary-dark);
+  background-color: var(--c-primary-pale); color: var(--c-primary-dark);
 }
 
 /* ── Utility overrides ──────────────────────────────────────────────────────── */
@@ -224,39 +177,23 @@ a:hover { color: var(--c-primary-dark); text-decoration: underline; }
 .bg-success { background-color: var(--c-success) !important; }
 .bg-danger  { background-color: var(--c-danger)  !important; }
 .bg-warning { background-color: var(--c-warning) !important; }
-
 .border-primary { border-color: var(--c-primary) !important; }
 .border-danger  { border-color: var(--c-danger)  !important; }
-
-/* Card danger zone header */
-.card-header.bg-danger { background-color: var(--c-danger) !important; }
+.card-header.bg-danger { background-color: var(--c-danger) !important; color: #fff; }
 
 /* ── Misc ───────────────────────────────────────────────────────────────────── */
-optgroup { font-weight: 600; color: var(--c-muted); }
+optgroup { font-weight: 500; color: var(--c-muted); }
 
 pre {
-  background-color: var(--c-bg-subtle);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius);
-  padding: 1rem;
-  font-size: 0.82rem;
-  color: var(--c-text);
-  line-height: 1.55;
+  background-color: var(--c-bg-subtle); border: 1px solid var(--c-border);
+  border-radius: var(--radius); padding: 1rem;
+  font-size: 0.82rem; color: var(--c-text); line-height: 1.55;
 }
 
-/* Input group text */
 .input-group-text {
-  background-color: var(--c-bg-subtle);
-  border-color: var(--c-border);
-  color: var(--c-muted);
+  background-color: var(--c-bg-subtle); border-color: var(--c-border);
+  color: var(--c-muted); font-size: 0.875rem;
 }
 
-/* Modal */
-.modal-content {
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius);
-}
-.modal-header {
-  background-color: var(--c-bg-subtle);
-  border-bottom: 1px solid var(--c-border);
-}
+.modal-content  { border: 1px solid var(--c-border); border-radius: var(--radius); }
+.modal-header   { background-color: var(--c-bg-subtle); border-bottom: 1px solid var(--c-border); }
