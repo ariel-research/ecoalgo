@@ -85,6 +85,9 @@ class Survey(db.Model):
     # Whether to use item capacities (if False, treat all items as unlimited capacity)
     use_item_capacity = db.Column(db.Boolean, default=False)
 
+    # Algorithm category chosen at creation time
+    category = db.Column(db.String(50), nullable=True)
+
     # Survey state
     is_open = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -92,6 +95,7 @@ class Survey(db.Model):
     # Relationships
     items = db.relationship('SurveyItem', backref='survey', lazy='dynamic', cascade='all, delete-orphan')
     participants = db.relationship('SurveyParticipant', backref='survey', lazy='dynamic', cascade='all, delete-orphan')
+    conflicts = db.relationship('ItemConflict', backref='survey', lazy='dynamic', cascade='all, delete-orphan')
 
     def __init__(self, **kwargs):
         super(Survey, self).__init__(**kwargs)
@@ -170,13 +174,34 @@ class ItemRanking(db.Model):
         return f'<ItemRanking item={self.item_id} rank={self.rank} points={self.points} rating={self.rating}>'
 
 
-class AllocationResult(db.Model):
-    """Stores results from running fairpyx algorithms."""
+class ItemConflict(db.Model):
+    """A pair of items that cannot appear in the same allocation."""
     id = db.Column(db.Integer, primary_key=True)
     survey_id = db.Column(db.Integer, db.ForeignKey('survey.id'), nullable=False)
+    # Always store with item1_id < item2_id to guarantee uniqueness
+    item1_id = db.Column(db.Integer, db.ForeignKey('survey_item.id'), nullable=False)
+    item2_id = db.Column(db.Integer, db.ForeignKey('survey_item.id'), nullable=False)
+
+    item1 = db.relationship('SurveyItem', foreign_keys=[item1_id])
+    item2 = db.relationship('SurveyItem', foreign_keys=[item2_id])
+
+    __table_args__ = (
+        db.UniqueConstraint('survey_id', 'item1_id', 'item2_id', name='unique_conflict'),
+    )
+
+    def __repr__(self):
+        return f'<ItemConflict {self.item1_id} <-> {self.item2_id}>'
+
+
+class AllocationResult(db.Model):
+    """Stores results from running algorithms."""
+    id = db.Column(db.Integer, primary_key=True)
+    survey_id = db.Column(db.Integer, db.ForeignKey('survey.id'), nullable=False)
+    category = db.Column(db.String(50), nullable=True)   # nullable for backward compat
     algorithm = db.Column(db.String(100), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     result_json = db.Column(db.Text)  # JSON allocation data
+    logs = db.Column(db.Text)  # Explanation logger output
 
     survey = db.relationship('Survey', backref=db.backref('allocation_results', lazy='dynamic', cascade='all, delete-orphan'))
 

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Create Survey - Fair Division Algorithms{% endblock %}
+{% block title %}Create Survey{% endblock %}
 
 {% block content %}
 <div class="row">
@@ -24,34 +24,40 @@
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label">Ranking Mode *</label>
+                        <label for="category" class="form-label">Category *</label>
+                        <select class="form-select" id="category" name="category" required onchange="onCategoryChange(this.value)">
+                            <option value="">Select a category…</option>
+                            {% for key, label in categories.items() %}
+                            <option value="{{ key }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <div id="category-hint" class="form-text mt-1" style="display:none"></div>
+                    </div>
+
+                    <!-- Ranking mode (hidden for budget_allocation — forced to budget) -->
+                    <div class="mb-3" id="ranking-mode-section" style="display:none">
+                        <label class="form-label">Preference Input Mode *</label>
                         <div class="form-check">
-                            <input class="form-check-input" type="radio" name="ranking_mode" id="ordinal" value="ordinal" checked onchange="toggleModeFields()">
+                            <input class="form-check-input" type="radio" name="ranking_mode" id="ordinal" value="ordinal" checked onchange="onRankingModeChange()">
                             <label class="form-check-label" for="ordinal">
-                                <strong>Ordinal</strong> - Participants rank items as 1st, 2nd, 3rd, etc.
+                                <strong>Ordinal</strong> — participants rank items 1st, 2nd, 3rd…
                             </label>
                         </div>
                         <div class="form-check">
-                            <input class="form-check-input" type="radio" name="ranking_mode" id="budget" value="budget" onchange="toggleModeFields()">
-                            <label class="form-check-label" for="budget">
-                                <strong>Budget</strong> - Participants distribute a fixed number of points among items
-                            </label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="ranking_mode" id="rating" value="rating" onchange="toggleModeFields()">
+                            <input class="form-check-input" type="radio" name="ranking_mode" id="rating" value="rating" onchange="onRankingModeChange()">
                             <label class="form-check-label" for="rating">
-                                <strong>Rating</strong> - Participants score each item independently within a range
+                                <strong>Rating</strong> — participants score each item independently
                             </label>
                         </div>
                     </div>
 
-                    <div class="mb-3" id="budget-field" style="display: none;">
+                    <div class="mb-3" id="budget-field" style="display:none">
                         <label for="total_points" class="form-label">Total Points to Distribute</label>
                         <input type="number" class="form-control" id="total_points" name="total_points" value="100" min="1">
                         <div class="form-text">Participants must distribute exactly this many points among all items.</div>
                     </div>
 
-                    <div class="mb-3" id="rating-field" style="display: none;">
+                    <div class="mb-3" id="rating-field" style="display:none">
                         <div class="row">
                             <div class="col-md-6">
                                 <label for="min_score" class="form-label">Minimum Score</label>
@@ -62,37 +68,7 @@
                                 <input type="number" class="form-control" id="max_score" name="max_score" value="10" min="1">
                             </div>
                         </div>
-                        <div class="form-text">Each item will be scored independently within this range.</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label"><strong>Weights</strong></label>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="use_weights" name="use_weights">
-                            <label class="form-check-label" for="use_weights">
-                                Enable Weights - Use item weights and user weights
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label"><strong>Item Capacities</strong></label>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="use_item_capacity" name="use_item_capacity">
-                            <label class="form-check-label" for="use_item_capacity">
-                                Use item capacities (limit how many agents each item can be assigned to)
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label"><strong>User Requirements</strong></label>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="require_user_capacity" name="require_user_capacity">
-                            <label class="form-check-label" for="require_user_capacity">
-                                Require users to enter their capacity
-                            </label>
-                        </div>
+                        <div class="form-text">Each item is scored independently within this range.</div>
                     </div>
 
                     <div class="d-grid gap-2">
@@ -106,10 +82,32 @@
 </div>
 
 <script>
-function toggleModeFields() {
-    const budgetMode = document.getElementById('budget').checked;
+const CATEGORY_HINTS = {
+    fair_division:          'Standard allocation: each item is assigned to one agent. Algorithms use ordinal or rating preferences.',
+    capacitated_allocation: 'Multi-seat allocation: items have multiple slots and agents have capacity limits and weights. Participants will be asked to enter their weight and capacity.',
+    budget_allocation:      'Participants distribute a fixed budget of points across items to express their preferences.',
+};
+
+function onCategoryChange(cat) {
+    const hintEl = document.getElementById('category-hint');
+    hintEl.textContent = CATEGORY_HINTS[cat] || '';
+    hintEl.style.display = cat ? '' : 'none';
+
+    const isBudget = cat === 'budget_allocation';
+    document.getElementById('ranking-mode-section').style.display = (!cat || isBudget) ? 'none' : '';
+    document.getElementById('budget-field').style.display = isBudget ? 'block' : 'none';
+    if (!isBudget) {
+        document.getElementById('rating-field').style.display =
+            document.getElementById('rating').checked ? 'block' : 'none';
+    } else {
+        document.getElementById('rating-field').style.display = 'none';
+        // Reset so server receives a clean value
+        document.getElementById('ordinal').checked = true;
+    }
+}
+
+function onRankingModeChange() {
     const ratingMode = document.getElementById('rating').checked;
-    document.getElementById('budget-field').style.display = budgetMode ? 'block' : 'none';
     document.getElementById('rating-field').style.display = ratingMode ? 'block' : 'none';
 }
 </script>

@@ -35,3 +35,6 @@ class Config:
     # Send password reset/confirmation without external mail server
     SECURITY_SEND_REGISTER_EMAIL = False
     SECURITY_SEND_PASSWORD_CHANGE_EMAIL = False
+
+    # Algorithm execution timeout in seconds (default: 60)
+    ALGORITHM_TIMEOUT = int(os.environ.get('ALGORITHM_TIMEOUT', 60))

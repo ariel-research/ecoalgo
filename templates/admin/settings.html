@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Settings - Fair Division Algorithms{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1>Admin Settings</h1>
+        <p class="text-muted">Configure application-wide settings.</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Algorithm Settings</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('admin_settings') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3">
+                        <label for="algorithm_timeout" class="form-label">
+                            Algorithm Timeout (seconds)
+                        </label>
+                        <input type="number" class="form-control" id="algorithm_timeout"
+                               name="algorithm_timeout" value="{{ timeout }}" min="1" required>
+                        <div class="form-text">
+                            Maximum time an algorithm is allowed to run before being aborted.
+                            Default: 60 seconds. Changes apply immediately but reset on server restart.
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary ms-2">Back</a>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

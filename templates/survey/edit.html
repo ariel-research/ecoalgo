@@ -42,19 +42,27 @@
         <form method="POST" action="{{ url_for('survey_update', survey_id=survey.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="row">
-                <div class="col-md-6 mb-3">
+                <div class="col-md-5 mb-3">
                     <label for="title" class="form-label">Title</label>
                     <input type="text" class="form-control" id="title" name="title" value="{{ survey.title }}">
                 </div>
                 <div class="col-md-3 mb-3">
-                    <label for="ranking_mode" class="form-label">Ranking Mode</label>
-                    <select class="form-select" id="ranking_mode" name="ranking_mode" onchange="toggleModeFields()">
-                        <option value="ordinal" {{ 'selected' if survey.ranking_mode == 'ordinal' }}>Ordinal</option>
-                        <option value="budget" {{ 'selected' if survey.ranking_mode in ('budget', 'points') }}>Budget</option>
-                        <option value="rating" {{ 'selected' if survey.ranking_mode == 'rating' }}>Rating</option>
+                    <label for="category" class="form-label">Category</label>
+                    <select class="form-select" id="edit-category" name="category" onchange="editOnCategoryChange(this.value)">
+                        <option value="">— not set —</option>
+                        {% for key, label in categories.items() %}
+                        <option value="{{ key }}" {{ 'selected' if survey.category == key }}>{{ label }}</option>
+                        {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3 mb-3" id="budget-field" style="{{ '' if survey.ranking_mode in ('budget', 'points') else 'display: none;' }}">
+                <div class="col-md-2 mb-3" id="edit-ranking-mode-col" style="{{ 'display:none' if survey.category == 'budget_allocation' else '' }}">
+                    <label for="ranking_mode" class="form-label">Mode</label>
+                    <select class="form-select" id="ranking_mode" name="ranking_mode" onchange="toggleModeFields()" {{ 'disabled' if survey.category == 'budget_allocation' }}>
+                        <option value="ordinal" {{ 'selected' if survey.ranking_mode == 'ordinal' }}>Ordinal</option>
+                        <option value="rating"  {{ 'selected' if survey.ranking_mode == 'rating' }}>Rating</option>
+                    </select>
+                </div>
+                <div class="col-md-2 mb-3" id="budget-field" style="{{ '' if survey.ranking_mode in ('budget', 'points') else 'display: none;' }}">
                     <label for="total_points" class="form-label">Total Points</label>
                     <input type="number" class="form-control" id="total_points" name="total_points" value="{{ survey.total_points }}" min="1">
                 </div>
@@ -70,35 +78,6 @@
             <div class="mb-3">
                 <label for="description" class="form-label">Description</label>
                 <textarea class="form-control" id="description" name="description" rows="2">{{ survey.description or '' }}</textarea>
-            </div>
-            <div class="row">
-                <div class="col-md-4 mb-3">
-                    <label class="form-label"><strong>Weights</strong></label>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="use_weights" name="use_weights" {{ 'checked' if survey.use_weights }}>
-                        <label class="form-check-label" for="use_weights">
-                            Enable Weights (item weights + user weights)
-                        </label>
-                    </div>
-                </div>
-                <div class="col-md-4 mb-3">
-                    <label class="form-label"><strong>Item Capacities</strong></label>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="use_item_capacity" name="use_item_capacity" {{ 'checked' if survey.use_item_capacity }}>
-                        <label class="form-check-label" for="use_item_capacity">
-                            Use item capacities
-                        </label>
-                    </div>
-                </div>
-                <div class="col-md-4 mb-3">
-                    <label class="form-label"><strong>User Requirements</strong></label>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="require_user_capacity" name="require_user_capacity" {{ 'checked' if survey.require_user_capacity }}>
-                        <label class="form-check-label" for="require_user_capacity">
-                            Require users to enter their capacity
-                        </label>
-                    </div>
-                </div>
             </div>
             <button type="submit" class="btn btn-primary">Update Settings</button>
         </form>
@@ -304,6 +283,92 @@
     </div>
 </div>
 
+<!-- Conflicts Section -->
+{% if not conflicts %}
+<div class="mb-3">
+    <a href="#conflicts-section" class="text-decoration-none small" id="show-conflicts-link" onclick="document.getElementById('conflicts-section').style.display='block'; this.style.display='none'; return false;">
+        + Define item conflicts
+    </a>
+</div>
+{% endif %}
+<div id="conflicts-section"{% if not conflicts %} style="display:none;"{% endif %}>
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Item Conflicts (<span id="conflicts-count">{{ conflicts|length }}</span>)</h5>
+        <small class="text-muted">Pairs of items that cannot appear in the same allocation</small>
+    </div>
+    <div class="card-body">
+        {% if survey.items.count() >= 2 %}
+        <!-- Add conflict pair -->
+        <form id="add-conflict-form" class="row g-2 align-items-end mb-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-auto">
+                <label class="form-label">Item 1</label>
+                <select class="form-select" name="item1_id" id="conflict-item1" required>
+                    <option value="">Select item...</option>
+                    {% for item in items %}
+                    <option value="{{ item.id }}">{{ item.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <label class="form-label">Item 2</label>
+                <select class="form-select" name="item2_id" id="conflict-item2" required>
+                    <option value="">Select item...</option>
+                    {% for item in items %}
+                    <option value="{{ item.id }}">{{ item.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-success">Add Conflict</button>
+            </div>
+        </form>
+
+        <!-- Import CSV -->
+        <div class="mb-3">
+            <a class="text-decoration-none small" data-bs-toggle="collapse" href="#conflict-csv-section" role="button">
+                &#8595; Import conflicts from CSV
+            </a>
+            <div class="collapse" id="conflict-csv-section">
+                <div class="card card-body bg-light mt-1 p-2">
+                    <div class="text-muted small mb-2">Two columns: <strong>item name 1</strong>, <strong>item name 2</strong>. No header row.</div>
+                    <div class="d-flex gap-2 align-items-center">
+                        <input type="file" class="form-control form-control-sm" id="conflict-csv-input" accept=".csv">
+                        <button type="button" class="btn btn-sm btn-success text-nowrap" onclick="importConflictCSV()">Import</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <p class="text-muted">Add at least 2 items to the survey before defining conflicts.</p>
+        {% endif %}
+
+        <!-- Conflicts list -->
+        <div id="conflicts-list">
+        {% if conflicts %}
+        <table class="table table-sm" id="conflicts-table">
+            <thead><tr><th>Item 1</th><th>Item 2</th><th></th></tr></thead>
+            <tbody>
+                {% for c in conflicts %}
+                <tr id="conflict-row-{{ c.id }}">
+                    <td>{{ c.item1.name }}</td>
+                    <td>{{ c.item2.name }}</td>
+                    <td>
+                        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-conflict" data-conflict-id="{{ c.id }}">Remove</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted" id="no-conflicts-msg">No conflicts defined yet.</p>
+        {% endif %}
+        </div>
+    </div>
+</div>
+</div>
+
 <!-- Dummy Users Section -->
 <div class="card mb-4">
     <div class="card-header">
@@ -405,50 +470,35 @@
         <h5 class="mb-0">Run Allocation Algorithm</h5>
     </div>
     <div class="card-body">
-        <p class="text-muted">Run a fair division algorithm on the collected preferences to compute an allocation.</p>
-        <form method="POST" action="{{ url_for('survey_run_algorithm', survey_id=survey.id) }}" class="row g-2 align-items-end">
+        {% if survey.category %}
+        <form method="POST" action="{{ url_for('survey_run_algorithm', survey_id=survey.id) }}" id="algo-run-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="col-md-4">
-                <label for="algorithm" class="form-label">Select Algorithm</label>
-                <select class="form-select" id="algorithm" name="algorithm" required>
-                    <option value="">Choose an algorithm...</option>
-                    <optgroup label="Picking Sequence">
-                        <option value="round_robin">Round Robin</option>
-                        <option value="bidirectional_round_robin">Bidirectional Round Robin</option>
-                        <option value="serial_dictatorship">Serial Dictatorship</option>
-                    </optgroup>
-                    <optgroup label="Matching">
-                        <option value="utilitarian_matching">Utilitarian Matching</option>
-                        <option value="iterated_maximum_matching">Iterated Maximum Matching</option>
-                        <option value="iterated_maximum_matching_adjusted">Iterated Maximum Matching (Adjusted)</option>
-                        <option value="iterated_maximum_matching_unadjusted">Iterated Maximum Matching (Unadjusted)</option>
-                    </optgroup>
-                    <optgroup label="Egalitarian">
-                        <option value="almost_egalitarian_allocation">Almost Egalitarian</option>
-                        <option value="almost_egalitarian_without_donation">Almost Egalitarian (No Donation)</option>
-                        <option value="almost_egalitarian_with_donation">Almost Egalitarian (With Donation)</option>
-                    </optgroup>
-                    <optgroup label="Fractional Egalitarian">
-                        <option value="fractional_egalitarian_allocation">Fractional Egalitarian</option>
-                        <option value="fractional_egalitarian_utilitarian_allocation">Fractional Egalitarian-Utilitarian</option>
-                    </optgroup>
-                    <optgroup label="Proportionality">
-                        <option value="maximally_proportional_allocation">Maximally Proportional</option>
-                    </optgroup>
-                    <optgroup label="Market Mechanisms">
-                        <option value="gale_shapley">Gale-Shapley</option>
-                        <option value="OC_function">Ordinal/Cardinal (OC)</option>
-                        <option value="TTC_function">Top Trading Cycles (TTC)</option>
-                        <option value="TTC_O_function">TTC Optimized (TTC-O)</option>
-                        <option value="SP_function">Second Price (SP)</option>
-                        <option value="SP_O_function">Second Price Optimized (SP-O)</option>
-                    </optgroup>
-                </select>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Algorithm</label>
+                    <select class="form-select" name="algorithm" id="algo-select" onchange="algoShowDescription(this)" required>
+                        <option value="">Select an algorithm…</option>
+                        {% for grp in grouped_algos %}
+                        <optgroup label="{{ grp.group }}">
+                            {% for algo in grp.algorithms %}
+                            <option value="{{ algo.value }}" data-description="{{ algo.description }}">{{ algo.label }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary">Run Algorithm</button>
+                </div>
             </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-primary">Run Algorithm</button>
-            </div>
+            <div id="algo-description" class="mt-3 p-3 bg-light rounded text-muted small" style="display:none"></div>
         </form>
+        {% else %}
+        <div class="alert alert-warning mb-0">
+            Set a <strong>Category</strong> in Survey Settings above to enable algorithm selection.
+        </div>
+        {% endif %}
+
         {% if survey.allocation_results.count() > 0 %}
         <hr>
         <a href="{{ url_for('survey_results', survey_id=survey.id) }}" class="btn btn-outline-primary">
@@ -774,6 +824,62 @@ function importCSV() {
     }).catch(function() { showToast('Network error', 'danger'); });
 }
 
+// ==================== CONFLICTS ====================
+
+document.getElementById('add-conflict-form') && document.getElementById('add-conflict-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const id1 = document.getElementById('conflict-item1').value;
+    const id2 = document.getElementById('conflict-item2').value;
+    if (id1 === id2) { showToast('Please select two different items.', 'danger'); return; }
+    ajaxPost('/surveys/' + SURVEY_ID + '/conflicts/add', { item1_id: id1, item2_id: id2 })
+        .then(function(resp) {
+            if (resp.success) { showToast(resp.message); reloadPage(); }
+            else showToast(resp.message || 'Failed', 'danger');
+        }).catch(function() { showToast('Network error', 'danger'); });
+});
+
+document.querySelectorAll('.btn-delete-conflict').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        if (!confirm('Remove this conflict?')) return;
+        ajaxPost('/surveys/' + SURVEY_ID + '/conflicts/' + btn.dataset.conflictId + '/delete', {})
+            .then(function(resp) {
+                if (resp.success) { showToast(resp.message); reloadPage(); }
+                else showToast(resp.message || 'Failed', 'danger');
+            }).catch(function() { showToast('Network error', 'danger'); });
+    });
+});
+
+function importConflictCSV() {
+    const input = document.getElementById('conflict-csv-input');
+    if (!input.files.length) { showToast('Please select a CSV file.', 'danger'); return; }
+    const formData = new FormData();
+    formData.append('csrf_token', CSRF_TOKEN);
+    formData.append('csv_file', input.files[0]);
+    fetch('/surveys/' + SURVEY_ID + '/conflicts/import-csv', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData
+    }).then(r => r.json()).then(function(resp) {
+        if (resp.success) { showToast(resp.message); reloadPage(); }
+        else showToast(resp.message || 'Import failed', 'danger');
+    }).catch(function() { showToast('Network error', 'danger'); });
+}
+
+// Prevent selecting the same item in both conflict dropdowns
+(function() {
+    const sel1 = document.getElementById('conflict-item1');
+    const sel2 = document.getElementById('conflict-item2');
+    if (!sel1 || !sel2) return;
+    function refreshOther(changed, other) {
+        const val = changed.value;
+        Array.from(other.options).forEach(opt => {
+            opt.disabled = (opt.value && opt.value === val);
+        });
+    }
+    sel1.addEventListener('change', () => refreshOther(sel1, sel2));
+    sel2.addEventListener('change', () => refreshOther(sel2, sel1));
+})();
+
 // ==================== UTILS ====================
 function copyInviteLink() {
     const input = document.getElementById('invite-link');
@@ -783,9 +889,36 @@ function copyInviteLink() {
 }
 
 function toggleModeFields() {
-    const mode = document.getElementById('ranking_mode').value;
-    document.getElementById('budget-field').style.display = mode === 'budget' ? '' : 'none';
+    const modeSel = document.getElementById('ranking_mode');
+    if (!modeSel) return;
+    const mode = modeSel.value;
     document.getElementById('rating-field').style.display = mode === 'rating' ? '' : 'none';
+}
+
+// ==================== ALGORITHM SELECTOR ====================
+function algoShowDescription(sel) {
+    const descDiv = document.getElementById('algo-description');
+    const opt = sel.options[sel.selectedIndex];
+    const desc = opt && opt.dataset.description;
+    if (desc) { descDiv.textContent = desc; descDiv.style.display = ''; }
+    else { descDiv.style.display = 'none'; }
+}
+
+// ==================== CATEGORY CHANGE (settings form) ====================
+function editOnCategoryChange(cat) {
+    const isBudget = cat === 'budget_allocation';
+    const modeCol  = document.getElementById('edit-ranking-mode-col');
+    const modeSel  = document.getElementById('ranking_mode');
+    const budgetFld = document.getElementById('budget-field');
+
+    modeCol.style.display  = isBudget ? 'none' : '';
+    modeSel.disabled       = isBudget;
+    budgetFld.style.display = isBudget ? '' : 'none';
+    if (isBudget) {
+        document.getElementById('rating-field').style.display = 'none';
+    } else {
+        toggleModeFields();
+    }
 }
 </script>
 {% endblock %}

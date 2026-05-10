@@ -2,11 +2,13 @@ from flask import Flask, render_template, redirect, url_for, flash, request, abo
 from flask_security import Security, SQLAlchemyUserDatastore, current_user, auth_required, roles_required, roles_accepted, hash_password, user_registered
 from flask_wtf.csrf import CSRFProtect
 from config import Config
-from models import db, User, Role, Survey, SurveyItem, SurveyParticipant, ItemRanking, AllocationResult
+from models import db, User, Role, Survey, SurveyItem, SurveyParticipant, ItemRanking, AllocationResult, ItemConflict
 from forms import ExtendedRegisterForm
+from algorithms import ALGORITHMS, CATEGORIES, get_algo_data_for_template
 import uuid
 import json
 import random
+import concurrent.futures
 
 
 def is_ajax():
@@ -72,6 +74,53 @@ def is_valid_weight(w):
     return w > 0 and (w * 2) % 1 == 0
 
 
+# Flags automatically applied when a survey category is chosen.
+CATEGORY_SETTINGS = {
+    'fair_division': {
+        'use_weights':            False,
+        'require_user_capacity':  False,
+        'use_item_capacity':      False,
+    },
+    'capacitated_allocation': {
+        'use_weights':            True,
+        'require_user_capacity':  True,
+        'use_item_capacity':      True,
+    },
+    'budget_allocation': {
+        'use_weights':            False,
+        'require_user_capacity':  False,
+        'use_item_capacity':      False,
+        'ranking_mode':           'budget',   # forced — participants distribute points
+    },
+}
+
+
+def _apply_category_settings(survey, category, ranking_mode_form_value):
+    """Set survey flags based on the chosen category."""
+    settings = CATEGORY_SETTINGS[category]
+    survey.category = category
+    survey.use_weights = settings['use_weights']
+    survey.require_user_capacity = settings['require_user_capacity']
+    survey.use_item_capacity = settings['use_item_capacity']
+    survey.ranking_mode = settings.get('ranking_mode') or ranking_mode_form_value or 'ordinal'
+
+
+def _algo_list_grouped(category):
+    """Return algorithms for a category, grouped for template rendering."""
+    groups = {}
+    order = []
+    for name, entry in ALGORITHMS.items():
+        if entry['category'] != category:
+            continue
+        g = entry.get('group', 'Other')
+        if g not in groups:
+            groups[g] = []
+            order.append(g)
+        groups[g].append({'value': name, 'label': entry['display_name'],
+                          'description': entry.get('description', '')})
+    return [{'group': g, 'algorithms': groups[g]} for g in order]
+
+
 @app.route('/')
 def home():
     return render_template('home.html')
@@ -95,6 +144,25 @@ def admin_users():
     users = User.query.all()
     roles = Role.query.all()
     return render_template('admin/users.html', users=users, roles=roles)
+
+
+@app.route('/admin/settings', methods=['GET', 'POST'])
+@auth_required()
+@roles_required('admin')
+def admin_settings():
+    """Admin settings page."""
+    if request.method == 'POST':
+        timeout_val = request.form.get('algorithm_timeout', '')
+        try:
+            timeout = int(timeout_val)
+            if timeout < 1:
+                raise ValueError
+            app.config['ALGORITHM_TIMEOUT'] = timeout
+            flash(f'Algorithm timeout updated to {timeout} seconds.', 'success')
+        except ValueError:
+            flash('Timeout must be a positive integer.', 'danger')
+        return redirect(url_for('admin_settings'))
+    return render_template('admin/settings.html', timeout=app.config['ALGORITHM_TIMEOUT'])
 
 
 @app.route('/admin/users/<int:user_id>/toggle-active', methods=['POST'])
@@ -191,39 +259,37 @@ def survey_list():
 def survey_create():
     """Create a new survey."""
     if request.method == 'POST':
-        title = request.form.get('title')
-        description = request.form.get('description')
+        title = request.form.get('title', '').strip()
+        description = request.form.get('description', '').strip()
+        category = request.form.get('category', '').strip()
         ranking_mode = request.form.get('ranking_mode', 'ordinal')
         total_points = request.form.get('total_points', 100, type=int)
         min_score = request.form.get('min_score', 1, type=int)
         max_score = request.form.get('max_score', 10, type=int)
-        use_weights = request.form.get('use_weights') == 'on'
-        require_user_capacity = request.form.get('require_user_capacity') == 'on'
-        use_item_capacity = request.form.get('use_item_capacity') == 'on'
 
         if not title:
             flash('Survey title is required.', 'danger')
-            return render_template('survey/create.html')
+            return render_template('survey/create.html', categories=CATEGORIES)
+        if category not in CATEGORY_SETTINGS:
+            flash('Please select a valid category.', 'danger')
+            return render_template('survey/create.html', categories=CATEGORIES)
 
         survey = Survey(
             title=title,
             description=description,
             creator_id=current_user.id,
-            ranking_mode=ranking_mode,
             total_points=total_points,
             min_score=min_score,
             max_score=max_score,
-            use_weights=use_weights,
-            require_user_capacity=require_user_capacity,
-            use_item_capacity=use_item_capacity
         )
+        _apply_category_settings(survey, category, ranking_mode)
         db.session.add(survey)
         db.session.commit()
 
         flash(f'Survey "{title}" created successfully!', 'success')
         return redirect(url_for('survey_edit', survey_id=survey.id))
 
-    return render_template('survey/create.html')
+    return render_template('survey/create.html', categories=CATEGORIES)
 
 
 @app.route('/surveys/<int:survey_id>')
@@ -252,7 +318,18 @@ def survey_edit(survey_id):
                 row['ratings'][r.item_id] = r.rating
         rating_matrix.append(row)
 
-    return render_template('survey/edit.html', survey=survey, users=users, items=items, rating_matrix=rating_matrix)
+    conflicts = survey.conflicts.all()
+    grouped_algos = _algo_list_grouped(survey.category) if survey.category else []
+    return render_template(
+        'survey/edit.html',
+        survey=survey,
+        users=users,
+        items=items,
+        rating_matrix=rating_matrix,
+        conflicts=conflicts,
+        categories=CATEGORIES,
+        grouped_algos=grouped_algos,
+    )
 
 
 @app.route('/surveys/<int:survey_id>/update', methods=['POST'])
@@ -266,13 +343,15 @@ def survey_update(survey_id):
 
     survey.title = request.form.get('title', survey.title)
     survey.description = request.form.get('description', survey.description)
-    survey.ranking_mode = request.form.get('ranking_mode', survey.ranking_mode)
     survey.total_points = request.form.get('total_points', survey.total_points, type=int)
     survey.min_score = request.form.get('min_score', survey.min_score, type=int)
     survey.max_score = request.form.get('max_score', survey.max_score, type=int)
-    survey.use_weights = request.form.get('use_weights') == 'on'
-    survey.require_user_capacity = request.form.get('require_user_capacity') == 'on'
-    survey.use_item_capacity = request.form.get('use_item_capacity') == 'on'
+
+    new_category = request.form.get('category', survey.category)
+    if new_category in CATEGORY_SETTINGS:
+        _apply_category_settings(survey, new_category, request.form.get('ranking_mode', survey.ranking_mode))
+    else:
+        survey.ranking_mode = request.form.get('ranking_mode', survey.ranking_mode)
 
     db.session.commit()
     flash('Survey updated successfully!', 'success')
@@ -450,6 +529,122 @@ def survey_delete_item(survey_id, item_id):
         return jsonify(success=True, message=f'Item "{name}" has been removed.')
     flash(f'Item "{name}" has been removed.', 'success')
     return redirect(url_for('survey_edit', survey_id=survey.id))
+
+
+# ==================== ITEM CONFLICTS ====================
+
+@app.route('/surveys/<int:survey_id>/conflicts/add', methods=['POST'])
+@auth_required()
+@roles_accepted('admin', 'moderator')
+def survey_add_conflict(survey_id):
+    survey = Survey.query.get_or_404(survey_id)
+    if survey.creator_id != current_user.id and not current_user.has_role('admin'):
+        abort(403)
+
+    id1 = request.form.get('item1_id', type=int)
+    id2 = request.form.get('item2_id', type=int)
+
+    if not id1 or not id2 or id1 == id2:
+        return jsonify(success=False, message='Please select two different items.')
+
+    # Normalise order
+    lo, hi = (id1, id2) if id1 < id2 else (id2, id1)
+
+    # Verify both items belong to this survey
+    items = {i.id for i in survey.items.all()}
+    if lo not in items or hi not in items:
+        return jsonify(success=False, message='One or both items not found in this survey.')
+
+    if ItemConflict.query.filter_by(survey_id=survey.id, item1_id=lo, item2_id=hi).first():
+        return jsonify(success=False, message='This conflict already exists.')
+
+    db.session.add(ItemConflict(survey_id=survey.id, item1_id=lo, item2_id=hi))
+    db.session.commit()
+    return jsonify(success=True, message='Conflict added.')
+
+
+@app.route('/surveys/<int:survey_id>/conflicts/<int:conflict_id>/delete', methods=['POST'])
+@auth_required()
+@roles_accepted('admin', 'moderator')
+def survey_delete_conflict(survey_id, conflict_id):
+    survey = Survey.query.get_or_404(survey_id)
+    if survey.creator_id != current_user.id and not current_user.has_role('admin'):
+        abort(403)
+
+    conflict = ItemConflict.query.get_or_404(conflict_id)
+    if conflict.survey_id != survey.id:
+        abort(404)
+
+    db.session.delete(conflict)
+    db.session.commit()
+    return jsonify(success=True, message='Conflict removed.')
+
+
+@app.route('/surveys/<int:survey_id>/conflicts/import-csv', methods=['POST'])
+@auth_required()
+@roles_accepted('admin', 'moderator')
+def survey_import_conflicts_csv(survey_id):
+    import csv, io
+    survey = Survey.query.get_or_404(survey_id)
+    if survey.creator_id != current_user.id and not current_user.has_role('admin'):
+        abort(403)
+
+    f = request.files.get('csv_file')
+    if not f or not f.filename:
+        return jsonify(success=False, message='No file selected.')
+    if not f.filename.lower().endswith('.csv'):
+        return jsonify(success=False, message='File must be a .csv file.')
+
+    try:
+        text = f.read().decode('utf-8-sig')
+    except UnicodeDecodeError:
+        return jsonify(success=False, message='File must be UTF-8 encoded.')
+
+    items_by_name = {i.name.strip().lower(): i for i in survey.items.all()}
+    existing = {(c.item1_id, c.item2_id) for c in survey.conflicts.all()}
+
+    added, errors = 0, []
+    reader = csv.reader(io.StringIO(text))
+    for i, row in enumerate(reader, start=1):
+        row = [c.strip() for c in row]
+        if not any(row):
+            continue
+        if len(row) < 2:
+            errors.append(f'Row {i}: need two item names.')
+            continue
+
+        name1, name2 = row[0].lower(), row[1].lower()
+        if name1 == name2:
+            errors.append(f'Row {i}: both names are the same ("{row[0]}").')
+            continue
+
+        item1 = items_by_name.get(name1)
+        item2 = items_by_name.get(name2)
+        if not item1:
+            errors.append(f'Row {i}: item "{row[0]}" not found.')
+            continue
+        if not item2:
+            errors.append(f'Row {i}: item "{row[1]}" not found.')
+            continue
+
+        lo, hi = (item1.id, item2.id) if item1.id < item2.id else (item2.id, item1.id)
+        if (lo, hi) in existing:
+            errors.append(f'Row {i}: conflict ({row[0]}, {row[1]}) already exists.')
+            continue
+
+        db.session.add(ItemConflict(survey_id=survey.id, item1_id=lo, item2_id=hi))
+        existing.add((lo, hi))
+        added += 1
+
+    if added == 0 and errors:
+        db.session.rollback()
+        return jsonify(success=False, message='No conflicts imported. ' + '; '.join(errors))
+
+    db.session.commit()
+    msg = f'{added} conflict(s) imported.'
+    if errors:
+        msg += ' Skipped: ' + '; '.join(errors)
+    return jsonify(success=True, message=msg)
 
 
 @app.route('/surveys/<int:survey_id>/items/<int:item_id>/edit', methods=['POST'])
@@ -887,131 +1082,124 @@ def survey_update_participant_field(survey_id, participant_id):
 
 # ==================== ALGORITHM EXECUTION ====================
 
-def survey_to_fairpyx_valuations(survey):
-    """Convert survey data to fairpyx-compatible valuations format."""
-    participants = survey.participants.all()
-    items = survey.items.all()
-
-    valuations = {}
-    for p in participants:
-        name = p.get_display_name()
-        valuations[name] = {}
-        for ranking in p.rankings.all():
-            item_name = ranking.item.name
-            if survey.ranking_mode == 'ordinal':
-                # Convert rank to value (higher rank = higher value)
-                value = len(items) - ranking.rank + 1
-            elif survey.ranking_mode in ('budget', 'points'):
-                value = ranking.points
-            else:  # rating
-                value = ranking.rating
-            valuations[name][item_name] = value
-
-    return valuations
-
-
-def get_item_capacities(survey):
-    """Get item capacities as a dict. If use_item_capacity is disabled, return large capacity for all."""
-    if survey.use_item_capacity:
-        return {item.name: item.capacity for item in survey.items.all()}
-    # When item capacity is disabled, use number of participants as capacity (effectively unlimited)
-    num_participants = survey.participants.count()
-    return {item.name: max(num_participants, 1) for item in survey.items.all()}
-
-
 @app.route('/surveys/<int:survey_id>/run-algorithm', methods=['POST'])
 @auth_required()
 @roles_accepted('admin', 'moderator')
 def survey_run_algorithm(survey_id):
-    """Run a fairpyx algorithm on the survey data."""
+    """Run an algorithm on the survey data."""
     survey = Survey.query.get_or_404(survey_id)
     if survey.creator_id != current_user.id and not current_user.has_role('admin'):
         abort(403)
 
-    algorithm = request.form.get('algorithm')
+    algorithm = request.form.get('algorithm', '').strip()
+    category = survey.category
+
+    if not category:
+        flash('This survey has no category set. Update the survey settings first.', 'danger')
+        return redirect(url_for('survey_edit', survey_id=survey.id))
+
     if not algorithm:
         flash('Please select an algorithm.', 'danger')
         return redirect(url_for('survey_edit', survey_id=survey.id))
 
-    # Check if there are participants with rankings
+    entry = ALGORITHMS.get(algorithm)
+    if not entry or entry['category'] != category:
+        flash('Invalid algorithm for this survey\'s category.', 'danger')
+        return redirect(url_for('survey_edit', survey_id=survey.id))
+
     participants_with_rankings = [p for p in survey.participants.all() if p.rankings.count() > 0]
     if not participants_with_rankings:
         flash('No participants have submitted rankings yet.', 'danger')
         return redirect(url_for('survey_edit', survey_id=survey.id))
 
-    items = survey.items.all()
-    if not items:
+    if not survey.items.count():
         flash('No items in the survey.', 'danger')
         return redirect(url_for('survey_edit', survey_id=survey.id))
 
     try:
-        from fairpyx import Instance, AllocationBuilder, divide
+        import importlib, io, logging, inspect
+        from fairpyx import divide
+        from fairpyx.explanations import SingleExplanationLogger
 
-        valuations = survey_to_fairpyx_valuations(survey)
-        item_capacities = get_item_capacities(survey)
+        instance = entry['builder'](survey)
 
-        # Create fairpyx instance
-        instance = Instance(valuations=valuations, item_capacities=item_capacities)
+        mod = importlib.import_module(entry['module'])
+        algo_func = getattr(mod, entry['function'])
 
-        # Algorithm registry: map name -> (module, function_name)
-        ALGORITHM_REGISTRY = {
-            # Picking Sequence
-            'round_robin': ('fairpyx.algorithms.picking_sequence', 'round_robin'),
-            'bidirectional_round_robin': ('fairpyx.algorithms.picking_sequence', 'bidirectional_round_robin'),
-            'serial_dictatorship': ('fairpyx.algorithms.picking_sequence', 'serial_dictatorship'),
-            # Matching
-            'utilitarian_matching': ('fairpyx.algorithms.utilitarian_matching', 'utilitarian_matching'),
-            'iterated_maximum_matching': ('fairpyx.algorithms.iterated_maximum_matching', 'iterated_maximum_matching'),
-            'iterated_maximum_matching_adjusted': ('fairpyx.algorithms.iterated_maximum_matching', 'iterated_maximum_matching_adjusted'),
-            'iterated_maximum_matching_unadjusted': ('fairpyx.algorithms.iterated_maximum_matching', 'iterated_maximum_matching_unadjusted'),
-            # Egalitarian
-            'almost_egalitarian_allocation': ('fairpyx.algorithms.almost_egalitarian', 'almost_egalitarian_allocation'),
-            'almost_egalitarian_without_donation': ('fairpyx.algorithms.almost_egalitarian', 'almost_egalitarian_without_donation'),
-            'almost_egalitarian_with_donation': ('fairpyx.algorithms.almost_egalitarian', 'almost_egalitarian_with_donation'),
-            # Fractional Egalitarian
-            'fractional_egalitarian_allocation': ('fairpyx.algorithms.fractional_egalitarian', 'fractional_egalitarian_allocation'),
-            'fractional_egalitarian_utilitarian_allocation': ('fairpyx.algorithms.fractional_egalitarian', 'fractional_egalitarian_utilitarian_allocation'),
-            # Proportionality
-            'maximally_proportional_allocation': ('fairpyx.algorithms.maximally_proportional', 'maximally_proportional_allocation'),
-            # Gale-Shapley
-            'gale_shapley': ('fairpyx.algorithms.Gale_Shapley_pareto_dominant_market_mechanism', 'gale_shapley'),
-            # Optimization-based Mechanisms
-            'OC_function': ('fairpyx.algorithms.Optimization_based_Mechanisms', 'OC_function'),
-            'TTC_function': ('fairpyx.algorithms.Optimization_based_Mechanisms', 'TTC_function'),
-            'TTC_O_function': ('fairpyx.algorithms.Optimization_based_Mechanisms', 'TTC_O_function'),
-            'SP_function': ('fairpyx.algorithms.Optimization_based_Mechanisms', 'SP_function'),
-            'SP_O_function': ('fairpyx.algorithms.Optimization_based_Mechanisms', 'SP_O_function'),
-        }
+        log_stream = io.StringIO()
+        log_handler = logging.StreamHandler(log_stream)
+        log_handler.setLevel(logging.DEBUG)
+        log_handler.setFormatter(logging.Formatter('%(message)s'))
 
-        if algorithm not in ALGORITHM_REGISTRY:
-            flash(f'Unknown algorithm: {algorithm}', 'danger')
-            return redirect(url_for('survey_edit', survey_id=survey.id))
+        fairpyx_root = logging.getLogger('fairpyx')
+        prev_level = fairpyx_root.level
+        fairpyx_root.setLevel(logging.DEBUG)
+        fairpyx_root.addHandler(log_handler)
 
-        # Dynamic import and run
-        mod_path, func_name = ALGORITHM_REGISTRY[algorithm]
-        import importlib
-        mod = importlib.import_module(mod_path)
-        algo_func = getattr(mod, func_name)
-        allocation = divide(algo_func, instance)
+        expl_logger = logging.getLogger(f'fairpyx.explanation.{uuid.uuid4().hex}')
+        expl_logger.setLevel(logging.DEBUG)
+        expl_logger.propagate = False
+        expl_logger.addHandler(log_handler)
+        explanation_logger = SingleExplanationLogger(expl_logger)
 
-        # Convert allocation to JSON-serializable format
+        timeout_seconds = app.config.get('ALGORITHM_TIMEOUT', 60)
+
+        def run_algo():
+            algo_params = inspect.signature(algo_func).parameters
+            if 'explanation_logger' in algo_params:
+                return divide(algo_func, instance, explanation_logger=explanation_logger)
+            else:
+                explanation_logger.explain_valuations(instance)
+                result = divide(algo_func, instance)
+                explanation_logger.explain_allocation(result, instance)
+                return result
+
+        timed_out = False
+        allocation = None
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(run_algo)
+        try:
+            allocation = future.result(timeout=timeout_seconds)
+        except concurrent.futures.TimeoutError:
+            timed_out = True
+            executor.shutdown(wait=False)
+        finally:
+            fairpyx_root.removeHandler(log_handler)
+            fairpyx_root.setLevel(prev_level)
+
+        logs = log_stream.getvalue()
+
+        if timed_out:
+            db.session.add(AllocationResult(
+                survey_id=survey.id,
+                category=category,
+                algorithm=algorithm,
+                result_json=None,
+                logs=logs or None,
+            ))
+            db.session.commit()
+            display = entry['display_name']
+            flash(f'"{display}" timed out after {timeout_seconds}s. Partial logs saved.', 'warning')
+            return redirect(url_for('survey_results', survey_id=survey.id))
+
+        items = survey.items.all()
         result_data = {
-            'allocation': dict(allocation),
-            'algorithm': algorithm,
-            'participants': [p.get_display_name() for p in participants_with_rankings],
-            'items': [item.name for item in items]
+            'allocation':    dict(allocation),
+            'algorithm':     algorithm,
+            'participants':  [p.get_display_name() for p in participants_with_rankings],
+            'items':         [item.name for item in items],
         }
 
-        # Save result
-        result = AllocationResult(
+        db.session.add(AllocationResult(
             survey_id=survey.id,
+            category=category,
             algorithm=algorithm,
-            result_json=json.dumps(result_data)
-        )
-        db.session.add(result)
+            result_json=json.dumps(result_data),
+            logs=logs or None,
+        ))
         db.session.commit()
 
-        flash(f'Algorithm "{algorithm}" completed successfully!', 'success')
+        flash(f'"{entry["display_name"]}" completed successfully!', 'success')
         return redirect(url_for('survey_results', survey_id=survey.id))
 
     except Exception as e:
@@ -1029,14 +1217,16 @@ def survey_results(survey_id):
         abort(403)
 
     results = survey.allocation_results.order_by(AllocationResult.created_at.desc()).all()
-    # Parse JSON for each result
     parsed_results = []
     for r in results:
         parsed_results.append({
-            'id': r.id,
-            'algorithm': r.algorithm,
-            'created_at': r.created_at,
-            'data': json.loads(r.result_json) if r.result_json else {}
+            'id':           r.id,
+            'category':     r.category,
+            'algorithm':    r.algorithm,
+            'display_name': ALGORITHMS.get(r.algorithm, {}).get('display_name', r.algorithm.replace('_', ' ').title()),
+            'created_at':   r.created_at,
+            'data':         json.loads(r.result_json) if r.result_json else {},
+            'logs':         r.logs,
         })
 
     return render_template('survey/results.html', survey=survey, results=parsed_results)
@@ -1245,8 +1435,22 @@ def my_surveys():
     return render_template('survey/my_surveys.html', participations=participations)
 
 
+def run_migrations():
+    """Apply any schema changes that db.create_all() won't handle (ALTER TABLE)."""
+    with db.engine.connect() as conn:
+        for table, column, col_type in [
+            ('allocation_result', 'category', 'VARCHAR(50)'),
+            ('survey',            'category', 'VARCHAR(50)'),
+        ]:
+            cols = [row[1] for row in conn.execute(db.text(f"PRAGMA table_info({table})"))]
+            if column not in cols:
+                conn.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+                conn.commit()
+
+
 with app.app_context():
     db.create_all()
+    run_migrations()
     create_roles()
     create_admin_user()
 
