@@ -134,9 +134,37 @@ def _algo_list_grouped(category):
     return [{'group': g, 'algorithms': groups[g]} for g in order]
 
 
+CATEGORY_INFO = {
+    'fair_division': {
+        'icon':        '⚖️',
+        'description': 'Assign items to agents based on ordinal rankings or ratings. Algorithms optimise for fairness and efficiency.',
+    },
+    'capacitated_allocation': {
+        'icon':        '🎓',
+        'description': 'Multi-seat allocation where agents have weights and capacity limits — suited for course or seat assignment problems.',
+    },
+    'budget_allocation': {
+        'icon':        '💰',
+        'description': 'Agents distribute a fixed budget of points across items to express preferences; algorithms produce proportional allocations.',
+    },
+    'approval_voting': {
+        'icon':        '✅',
+        'description': 'Agents approve a subset of items; algorithms elect a winning committee using proportional or load-balancing rules.',
+    },
+    'participatory_budgeting': {
+        'icon':        '🏛️',
+        'description': 'Agents support projects with costs; algorithms decide which projects to fund within a fixed community budget.',
+    },
+}
+
+
 @app.route('/')
 def home():
-    return render_template('home.html')
+    categories = [
+        {'key': k, 'label': CATEGORIES[k], **CATEGORY_INFO.get(k, {})}
+        for k in CATEGORIES
+    ]
+    return render_template('home.html', categories=categories)
 
 
 @app.route('/admin')

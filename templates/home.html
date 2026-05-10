@@ -1,59 +1,57 @@
 {% extends "base.html" %}
 
-{% block title %}Home - Fair Division Algorithms{% endblock %}
+{% block title %}EcoAlgo — Economic Algorithms Platform{% endblock %}
 
 {% block content %}
 <div class="row">
-    <div class="col-lg-8 mx-auto text-center">
-        <h1 class="display-4">Fair Division Algorithms</h1>
-        <p class="lead mt-3">
-            Explore and demonstrate fair division algorithms for allocating items among agents.
+    <div class="col-lg-7 mx-auto text-center">
+        <h1 class="display-5 fw-bold mb-3">Economic Algorithms</h1>
+        <p class="lead text-muted">
+            A platform for running and exploring economic algorithms —
+            fair division, voting rules, and participatory budgeting —
+            on real survey data.
         </p>
         <hr class="my-4">
 
         {% if current_user.is_authenticated %}
-            <p>Welcome back, <strong>{{ current_user.email }}</strong>!</p>
-            <p>You can now access the fair division algorithms demo.</p>
+            <p>Welcome back, <strong>{{ current_user.email }}</strong>.</p>
             {% if current_user.has_role('admin') %}
-                <div class="alert alert-info">
-                    <strong>Admin:</strong> You have administrator access.
-                    <a href="{{ url_for('admin_dashboard') }}" class="alert-link">Go to Admin Dashboard</a>
-                </div>
+            <div class="alert alert-info d-inline-block px-4">
+                <strong>Admin access</strong> —
+                <a href="{{ url_for('admin_dashboard') }}" class="alert-link">go to the dashboard</a>
+            </div>
+            {% endif %}
+            {% if current_user.has_role('moderator') or current_user.has_role('admin') %}
+            <div class="mt-3">
+                <a href="{{ url_for('survey_list') }}" class="btn btn-primary btn-lg me-2">My Surveys</a>
+                <a href="{{ url_for('survey_create') }}" class="btn btn-outline-primary btn-lg">New Survey</a>
+            </div>
+            {% else %}
+            <div class="mt-3">
+                <a href="{{ url_for('my_surveys') }}" class="btn btn-primary btn-lg">My Surveys</a>
+            </div>
             {% endif %}
         {% else %}
-            <p>Sign in or create an account to get started.</p>
-            <div class="d-grid gap-2 d-md-flex justify-content-md-center">
-                <a class="btn btn-primary btn-lg" href="{{ url_for('security.login') }}" role="button">Login</a>
-                <a class="btn btn-outline-primary btn-lg" href="{{ url_for('security.register') }}" role="button">Register</a>
+            <p class="text-muted">Sign in or create an account to get started.</p>
+            <div class="d-flex gap-2 justify-content-center mt-3">
+                <a class="btn btn-primary btn-lg" href="{{ url_for('security.login') }}">Login</a>
+                <a class="btn btn-outline-primary btn-lg" href="{{ url_for('security.register') }}">Register</a>
             </div>
         {% endif %}
     </div>
 </div>
 
-<div class="row mt-5">
-    <div class="col-md-4">
-        <div class="card">
+<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4 mt-4">
+    {% for cat in categories %}
+    <div class="col">
+        <div class="card h-100">
             <div class="card-body">
-                <h5 class="card-title">Item Allocation</h5>
-                <p class="card-text">Divide items among agents based on their preferences and rankings.</p>
+                <div class="fs-2 mb-2">{{ cat.icon }}</div>
+                <h5 class="card-title">{{ cat.label }}</h5>
+                <p class="card-text text-muted" style="font-size:0.875rem;">{{ cat.description }}</p>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">Capacity Constraints</h5>
-                <p class="card-text">Each item and agent has capacity limits for realistic allocation scenarios.</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">Fair Algorithms</h5>
-                <p class="card-text">Explore various fair division algorithms and compare their outcomes.</p>
-            </div>
-        </div>
-    </div>
+    {% endfor %}
 </div>
 {% endblock %}
