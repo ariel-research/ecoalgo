@@ -23,12 +23,12 @@
             {% endif %}
             {% if current_user.has_role('moderator') or current_user.has_role('admin') %}
             <div class="mt-3">
-                <a href="{{ url_for('survey_list') }}" class="btn btn-primary btn-lg me-2">My Surveys</a>
+                <a href="{{ url_for('survey_list') }}" class="btn btn-primary btn-lg me-2">Manage Surveys</a>
                 <a href="{{ url_for('survey_create') }}" class="btn btn-outline-primary btn-lg">New Survey</a>
             </div>
             {% else %}
             <div class="mt-3">
-                <a href="{{ url_for('my_surveys') }}" class="btn btn-primary btn-lg">My Surveys</a>
+                <a href="{{ url_for('my_surveys') }}" class="btn btn-primary btn-lg">My Participations</a>
             </div>
             {% endif %}
         {% else %}

@@ -22,7 +22,7 @@
                     </li>
                     {% if current_user.is_authenticated %}
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('my_surveys') }}">My Surveys</a>
+                            <a class="nav-link" href="{{ url_for('my_surveys') }}">My Participations</a>
                         </li>
                         {% if current_user.has_role('admin') or current_user.has_role('moderator') %}
                             <li class="nav-item">
