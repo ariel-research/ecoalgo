@@ -9,10 +9,11 @@ To add a new library:
 """
 
 CATEGORIES = {
-    'fair_division':          'Fair Division',
-    'capacitated_allocation': 'Capacitated & Weighted Allocation',
-    'budget_allocation':      'Budget Allocation',
-    'approval_voting':        'Approval Voting',
+    'fair_division':           'Fair Division',
+    'capacitated_allocation':  'Capacitated & Weighted Allocation',
+    'budget_allocation':       'Budget Allocation',
+    'approval_voting':         'Approval Voting',
+    'participatory_budgeting': 'Participatory Budgeting',
 }
 
 
@@ -101,6 +102,28 @@ def build_approval_profile(survey):
                     if r.points and r.points > 0}
         profile.add_voter(approved)
     return profile
+
+
+def build_pabutools_instance_and_profile(survey):
+    """pabutools (Instance, ApprovalProfile) from survey data.
+    item.weight → project cost; survey.total_points → budget limit."""
+    from pabutools.election import Project, Instance, ApprovalProfile, ApprovalBallot
+    from fractions import Fraction
+
+    items = list(survey.items.all())
+    projects = [Project(item.name, cost=Fraction(str(item.weight))) for item in items]
+    project_by_name = {p.name: p for p in projects}
+
+    instance = Instance(projects, budget_limit=Fraction(str(survey.total_points)))
+
+    profile = ApprovalProfile()
+    for p in survey.participants.all():
+        approved = {project_by_name[r.item.name]
+                    for r in p.rankings.all()
+                    if r.points and r.points > 0 and r.item.name in project_by_name}
+        profile.append(ApprovalBallot(approved))
+
+    return instance, profile
 
 
 # ── Algorithm registry ─────────────────────────────────────────────────────────
@@ -331,6 +354,56 @@ ALGORITHMS = {
         'rule_id':      'equal-shares',
         'builder':      build_approval_profile,
         'extra_params': ['completion'],
+    },
+
+    # ── Participatory Budgeting ────────────────────────────────────────────────
+    # All four use an ApprovalProfile + Instance(projects with costs, budget_limit).
+    # sequential_phragmen needs no satisfaction measure; the other three do
+    # (Cardinality_Sat is injected by the runner when needs_sat_class=True).
+
+    'pb_seq_phragmen': {
+        'category':     'participatory_budgeting',
+        'display_name': 'Sequential Phragmén',
+        'group':        'Phragmén Rules',
+        'description':  'Load-balancing rule: projects are elected one by one by minimising the virtual debt carried by supporters, promoting proportional representation across voters.',
+        'runner':       'pabutools',
+        'module':       'pabutools.rules',
+        'function':     'sequential_phragmen',
+        'builder':      build_pabutools_instance_and_profile,
+        'needs_sat_class': False,
+    },
+    'pb_equal_shares': {
+        'category':     'participatory_budgeting',
+        'display_name': 'Method of Equal Shares',
+        'group':        'Equal Shares',
+        'description':  'Distributes the budget equally among voters; projects are funded when their supporters can collectively afford them from their remaining share.',
+        'runner':       'pabutools',
+        'module':       'pabutools.rules',
+        'function':     'method_of_equal_shares',
+        'builder':      build_pabutools_instance_and_profile,
+        'needs_sat_class': True,
+    },
+    'pb_max_welfare': {
+        'category':     'participatory_budgeting',
+        'display_name': 'Max Additive Utilitarian Welfare',
+        'group':        'Welfare Maximisation',
+        'description':  'Selects the set of projects within budget that maximises total voter satisfaction (sum of approved funded projects across all voters).',
+        'runner':       'pabutools',
+        'module':       'pabutools.rules',
+        'function':     'max_additive_utilitarian_welfare',
+        'builder':      build_pabutools_instance_and_profile,
+        'needs_sat_class': True,
+    },
+    'pb_greedy_welfare': {
+        'category':     'participatory_budgeting',
+        'display_name': 'Greedy Utilitarian Welfare',
+        'group':        'Welfare Maximisation',
+        'description':  'Greedily selects projects in order of approval-count-to-cost ratio until the budget is exhausted.',
+        'runner':       'pabutools',
+        'module':       'pabutools.rules',
+        'function':     'greedy_utilitarian_welfare',
+        'builder':      build_pabutools_instance_and_profile,
+        'needs_sat_class': True,
     },
 }
 

@@ -57,15 +57,15 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-2 mb-3" id="edit-ranking-mode-col" style="{{ 'display:none' if survey.category in ('budget_allocation', 'approval_voting') else '' }}">
+                <div class="col-md-2 mb-3" id="edit-ranking-mode-col" style="{{ 'display:none' if survey.category in ('budget_allocation', 'approval_voting', 'participatory_budgeting') else '' }}">
                     <label for="ranking_mode" class="form-label">Mode</label>
-                    <select class="form-select" id="ranking_mode" name="ranking_mode" onchange="toggleModeFields()" {{ 'disabled' if survey.category in ('budget_allocation', 'approval_voting') }}>
+                    <select class="form-select" id="ranking_mode" name="ranking_mode" onchange="toggleModeFields()" {{ 'disabled' if survey.category in ('budget_allocation', 'approval_voting', 'participatory_budgeting') }}>
                         <option value="ordinal" {{ 'selected' if survey.ranking_mode == 'ordinal' }}>Ordinal</option>
                         <option value="rating"  {{ 'selected' if survey.ranking_mode == 'rating' }}>Rating</option>
                     </select>
                 </div>
-                <div class="col-md-2 mb-3" id="budget-field" style="{{ '' if survey.ranking_mode in ('budget', 'points') else 'display: none;' }}">
-                    <label for="total_points" class="form-label">Total Points</label>
+                <div class="col-md-2 mb-3" id="budget-field" style="{{ '' if survey.ranking_mode in ('budget', 'points') or survey.category == 'participatory_budgeting' else 'display: none;' }}">
+                    <label for="total_points" class="form-label">{{ 'Budget' if survey.category == 'participatory_budgeting' else 'Total Points' }}</label>
                     <input type="number" class="form-control" id="total_points" name="total_points" value="{{ survey.total_points }}" min="1">
                 </div>
                 <div class="col-md-3 mb-3" id="rating-field" style="{{ '' if survey.ranking_mode == 'rating' else 'display: none;' }}">
@@ -123,10 +123,10 @@
                             <input type="number" class="form-control" name="capacity" placeholder="Cap" value="1" min="1" style="width: 80px;">
                         </div>
                         {% endif %}
-                        {% if survey.use_weights %}
+                        {% if survey.use_weights or survey.category == 'participatory_budgeting' %}
                         <div class="col-auto">
-                            <label class="form-label">Weight</label>
-                            <input type="number" class="form-control" name="weight" placeholder="Wt" value="1.0" min="0" step="0.1" style="width: 80px;">
+                            <label class="form-label">{{ 'Cost' if survey.category == 'participatory_budgeting' else 'Weight' }}</label>
+                            <input type="number" class="form-control" name="weight" placeholder="{{ 'Cost' if survey.category == 'participatory_budgeting' else 'Wt' }}" value="1.0" min="0" step="0.1" style="width: 80px;">
                         </div>
                         {% endif %}
                         <div class="col-auto">
@@ -148,7 +148,7 @@
                         <div class="card card-body bg-light mt-1 p-2">
                             <div class="text-muted small mb-2">
                                 Expected columns (no header row):
-                                <strong>name</strong>{% if survey.use_item_capacity %}, <strong>capacity</strong>{% endif %}{% if survey.use_weights %}, <strong>weight</strong>{% endif %}, <strong>description</strong> (optional)
+                                <strong>name</strong>{% if survey.use_item_capacity %}, <strong>capacity</strong>{% endif %}{% if survey.use_weights or survey.category == 'participatory_budgeting' %}, <strong>{{ 'cost' if survey.category == 'participatory_budgeting' else 'weight' }}</strong>{% endif %}, <strong>description</strong> (optional)
                             </div>
                             <div class="d-flex gap-2 align-items-center">
                                 <input type="file" class="form-control form-control-sm" id="csv-file-input" accept=".csv">
@@ -168,8 +168,8 @@
                             {% if survey.use_item_capacity %}
                             <th>Capacity</th>
                             {% endif %}
-                            {% if survey.use_weights %}
-                            <th>Weight</th>
+                            {% if survey.use_weights or survey.category == 'participatory_budgeting' %}
+                            <th>{{ 'Cost' if survey.category == 'participatory_budgeting' else 'Weight' }}</th>
                             {% endif %}
                             <th></th>
                         </tr>
@@ -186,7 +186,7 @@
                             {% if survey.use_item_capacity %}
                             <td class="editable-cell" data-field="capacity" data-item-id="{{ item.id }}">{{ item.capacity }}</td>
                             {% endif %}
-                            {% if survey.use_weights %}
+                            {% if survey.use_weights or survey.category == 'participatory_budgeting' %}
                             <td class="editable-cell" data-field="weight" data-item-id="{{ item.id }}">{{ item.weight }}</td>
                             {% endif %}
                             <td class="text-nowrap">
@@ -937,14 +937,15 @@ function algoShowDescription(sel) {
 function editOnCategoryChange(cat) {
     const isBudget   = cat === 'budget_allocation';
     const isApproval = cat === 'approval_voting';
-    const hideMode   = isBudget || isApproval;
+    const isPB       = cat === 'participatory_budgeting';
+    const hideMode   = isBudget || isApproval || isPB;
     const modeCol    = document.getElementById('edit-ranking-mode-col');
     const modeSel    = document.getElementById('ranking_mode');
     const budgetFld  = document.getElementById('budget-field');
 
     modeCol.style.display   = hideMode ? 'none' : '';
     modeSel.disabled        = hideMode;
-    budgetFld.style.display = isBudget ? '' : 'none';
+    budgetFld.style.display = (isBudget || isPB) ? '' : 'none';
     if (hideMode) {
         document.getElementById('rating-field').style.display = 'none';
     } else {

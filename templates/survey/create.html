@@ -87,6 +87,7 @@ const CATEGORY_HINTS = {
     capacitated_allocation: 'Multi-seat allocation: items have multiple slots and agents have capacity limits and weights. Participants will be asked to enter their weight and capacity.',
     budget_allocation:      'Participants distribute a fixed budget of points across items to express their preferences.',
     approval_voting:        'Participants tick the items they approve of. The algorithm selects a winning committee of items.',
+    participatory_budgeting: 'Participants tick the projects they support. Each project has a cost; the algorithm selects which projects to fund within the budget. Set each item\'s cost via the "Weight" field.',
 };
 
 function onCategoryChange(cat) {
@@ -96,9 +97,10 @@ function onCategoryChange(cat) {
 
     const isBudget   = cat === 'budget_allocation';
     const isApproval = cat === 'approval_voting';
-    const hideMode   = isBudget || isApproval;
+    const isPB       = cat === 'participatory_budgeting';
+    const hideMode   = isBudget || isApproval || isPB;
     document.getElementById('ranking-mode-section').style.display = (!cat || hideMode) ? 'none' : '';
-    document.getElementById('budget-field').style.display = isBudget ? 'block' : 'none';
+    document.getElementById('budget-field').style.display = (isBudget || isPB) ? 'block' : 'none';
     if (!hideMode) {
         document.getElementById('rating-field').style.display =
             document.getElementById('rating').checked ? 'block' : 'none';

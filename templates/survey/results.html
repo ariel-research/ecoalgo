@@ -37,7 +37,36 @@
             </div>
         </div>
         <div class="card-body">
-            {% if result.data and result.data.get('committees') %}
+            {% if result.data and result.data.get('funded_projects') is not none and 'funded_projects' in result.data %}
+            <!-- Participatory Budgeting: funded projects -->
+            <p class="text-muted mb-2">
+                Budget: <strong>{{ result.data['budget'] | int }}</strong> &nbsp;·&nbsp;
+                Total cost of funded projects: <strong>{{ result.data['total_cost'] }}</strong>
+            </p>
+            <div class="mb-3">
+                {% for project in result.data['funded_projects'] %}
+                <span class="badge bg-success me-1 mb-1 fs-6">{{ project }}</span>
+                {% endfor %}
+                {% if not result.data['funded_projects'] %}
+                <span class="text-muted">No projects could be funded within the budget.</span>
+                {% endif %}
+            </div>
+            <div class="row mt-2">
+                <div class="col-md-6">
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Summary</h6>
+                            <ul class="mb-0">
+                                <li>Voters: {{ result.data['participants'] | length }}</li>
+                                <li>Projects: {{ result.data['items'] | length }}</li>
+                                <li>Funded: {{ result.data['funded_projects'] | length }}</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {% elif result.data and result.data.get('committees') %}
             <!-- Approval Voting: committee result -->
             <p class="text-muted mb-2">
                 Committee size: <strong>{{ result.data['committeesize'] }}</strong>

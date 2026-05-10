@@ -98,6 +98,13 @@ CATEGORY_SETTINGS = {
         'use_item_capacity':      False,
         'ranking_mode':           'approval', # forced — participants tick approved items
     },
+    'participatory_budgeting': {
+        'use_weights':            False,  # item.weight used as project cost, not agent weight
+        'require_user_capacity':  False,
+        'use_item_capacity':      False,
+        'ranking_mode':           'approval', # participants tick projects they support
+        # survey.total_points = global project budget; item.weight = project cost
+    },
 }
 
 
@@ -1139,6 +1146,40 @@ def survey_run_algorithm(survey_id):
         return redirect(url_for('survey_edit', survey_id=survey.id))
 
     try:
+        if entry.get('runner') == 'pabutools':
+            import importlib
+            mod = importlib.import_module(entry['module'])
+            algo_func = getattr(mod, entry['function'])
+            instance, profile = entry['builder'](survey)
+
+            kwargs = {}
+            if entry.get('needs_sat_class'):
+                from pabutools.election.satisfaction import Cardinality_Sat
+                kwargs['sat_class'] = Cardinality_Sat
+
+            funded = algo_func(instance, profile, **kwargs)
+
+            items = survey.items.all()
+            result_data = {
+                'funded_projects': sorted(str(p) for p in funded),
+                'total_cost':      float(sum(p.cost for p in funded)),
+                'budget':          float(instance.budget_limit),
+                'algorithm':       algorithm,
+                'items':           [item.name for item in items],
+                'participants':    [p.get_display_name() for p in survey.participants.all()
+                                    if p.rankings.count() > 0],
+            }
+            db.session.add(AllocationResult(
+                survey_id=survey.id,
+                category=category,
+                algorithm=algorithm,
+                result_json=json.dumps(result_data),
+                logs=None,
+            ))
+            db.session.commit()
+            flash(f'"{entry["display_name"]}" completed successfully!', 'success')
+            return redirect(url_for('survey_results', survey_id=survey.id))
+
         if entry.get('runner') == 'abcvoting':
             from abcvoting import abcrules
             n_items = survey.items.count()
