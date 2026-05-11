@@ -1,5 +1,5 @@
 from flask import Flask, render_template, redirect, url_for, flash, request, abort, jsonify
-from flask_security import Security, SQLAlchemyUserDatastore, current_user, auth_required, roles_required, roles_accepted, hash_password, user_registered
+from flask_security import Security, SQLAlchemyUserDatastore, current_user, auth_required, roles_required, hash_password, user_registered
 from flask_wtf.csrf import CSRFProtect
 from config import Config
 from models import db, User, Role, Survey, SurveyItem, SurveyParticipant, ItemRanking, AllocationResult, ItemConflict
@@ -8,6 +8,7 @@ from algorithms import ALGORITHMS, CATEGORIES, get_algo_data_for_template
 import uuid
 import json
 import random
+import secrets
 import concurrent.futures
 
 
@@ -29,7 +30,7 @@ security = Security(app, user_datastore, register_form=ExtendedRegisterForm)
 
 @user_registered.connect_via(app)
 def on_user_registered(sender, user, **extra):
-    """Auto-generate username from email when a user registers."""
+    """Auto-generate username and grant moderator role on registration."""
     if not user.username:
         base = user.email.split('@')[0]
         username = base
@@ -38,7 +39,10 @@ def on_user_registered(sender, user, **extra):
             username = f'{base}{counter}'
             counter += 1
         user.username = username
-        db.session.commit()
+    mod_role = user_datastore.find_role('moderator')
+    if mod_role and mod_role not in user.roles:
+        user_datastore.add_role_to_user(user, mod_role)
+    db.session.commit()
 
 
 def create_roles():
@@ -116,6 +120,27 @@ def _apply_category_settings(survey, category, ranking_mode_form_value):
     survey.require_user_capacity = settings['require_user_capacity']
     survey.use_item_capacity = settings['use_item_capacity']
     survey.ranking_mode = settings.get('ranking_mode') or ranking_mode_form_value or 'ordinal'
+
+
+def _known_users_for(creator_id):
+    """Real users who have joined at least one survey created by creator_id."""
+    survey_ids = [s.id for s in Survey.query.filter_by(creator_id=creator_id)
+                  .with_entities(Survey.id).all()]
+    if not survey_ids:
+        return []
+    uid_rows = (db.session.query(SurveyParticipant.user_id)
+                .filter(SurveyParticipant.survey_id.in_(survey_ids))
+                .filter(SurveyParticipant.user_id.isnot(None))
+                .filter(SurveyParticipant.is_dummy == False)
+                .distinct().all())
+    ids = [r[0] for r in uid_rows]
+    if not ids:
+        return []
+    return (User.query
+            .filter(User.id.in_(ids))
+            .filter(User.is_system_dummy == False)
+            .filter(User.id != creator_id)
+            .all())
 
 
 def _algo_list_grouped(category):
@@ -276,7 +301,6 @@ def delete_user(user_id):
 
 @app.route('/moderator')
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def moderator_panel():
     """Moderator panel - accessible by admins and moderators."""
     surveys = Survey.query.filter_by(creator_id=current_user.id).all()
@@ -287,7 +311,6 @@ def moderator_panel():
 
 @app.route('/surveys')
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_list():
     """List all surveys created by the current moderator."""
     surveys = Survey.query.filter_by(creator_id=current_user.id).all()
@@ -296,7 +319,6 @@ def survey_list():
 
 @app.route('/surveys/create', methods=['GET', 'POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_create():
     """Create a new survey."""
     if request.method == 'POST':
@@ -335,16 +357,21 @@ def survey_create():
 
 @app.route('/surveys/<int:survey_id>')
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_edit(survey_id):
     """Edit survey details, manage items and participants."""
     survey = Survey.query.get_or_404(survey_id)
     if survey.creator_id != current_user.id and not current_user.has_role('admin'):
         abort(403)
 
-    users = User.query.all()
+    if current_user.has_role('admin'):
+        known_users = (User.query
+                       .filter(User.is_system_dummy == False)
+                       .filter(User.id != current_user.id)
+                       .all())
+    else:
+        known_users = _known_users_for(current_user.id)
 
-    # Build rating matrix for the rating table
+    # Build rating matrix for the rating table (includes dummies for management)
     items = survey.items.all()
     participants = survey.participants.all()
     rating_matrix = []
@@ -359,14 +386,16 @@ def survey_edit(survey_id):
                 row['ratings'][r.item_id] = r.rating
         rating_matrix.append(row)
 
+    dummy_count = survey.participants.filter_by(is_dummy=True).count()
     conflicts = survey.conflicts.all()
     grouped_algos = _algo_list_grouped(survey.category) if survey.category else []
     return render_template(
         'survey/edit.html',
         survey=survey,
-        users=users,
+        known_users=known_users,
         items=items,
         rating_matrix=rating_matrix,
+        dummy_count=dummy_count,
         conflicts=conflicts,
         categories=CATEGORIES,
         grouped_algos=grouped_algos,
@@ -375,7 +404,6 @@ def survey_edit(survey_id):
 
 @app.route('/surveys/<int:survey_id>/update', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_update(survey_id):
     """Update survey settings."""
     survey = Survey.query.get_or_404(survey_id)
@@ -401,7 +429,6 @@ def survey_update(survey_id):
 
 @app.route('/surveys/<int:survey_id>/toggle', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_toggle(survey_id):
     """Toggle survey open/closed status."""
     survey = Survey.query.get_or_404(survey_id)
@@ -418,7 +445,6 @@ def survey_toggle(survey_id):
 
 @app.route('/surveys/<int:survey_id>/delete', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_delete(survey_id):
     """Delete a survey."""
     survey = Survey.query.get_or_404(survey_id)
@@ -437,7 +463,6 @@ def survey_delete(survey_id):
 
 @app.route('/surveys/<int:survey_id>/items/add', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_add_item(survey_id):
     """Add an item to the survey."""
     survey = Survey.query.get_or_404(survey_id)
@@ -473,7 +498,6 @@ def survey_add_item(survey_id):
 
 @app.route('/surveys/<int:survey_id>/items/import-csv', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_import_items_csv(survey_id):
     """Import items from a CSV file."""
     import csv, io
@@ -551,7 +575,6 @@ def survey_import_items_csv(survey_id):
 
 @app.route('/surveys/<int:survey_id>/items/<int:item_id>/delete', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_delete_item(survey_id, item_id):
     """Delete an item from the survey."""
     survey = Survey.query.get_or_404(survey_id)
@@ -576,7 +599,6 @@ def survey_delete_item(survey_id, item_id):
 
 @app.route('/surveys/<int:survey_id>/conflicts/add', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_add_conflict(survey_id):
     survey = Survey.query.get_or_404(survey_id)
     if survey.creator_id != current_user.id and not current_user.has_role('admin'):
@@ -606,7 +628,6 @@ def survey_add_conflict(survey_id):
 
 @app.route('/surveys/<int:survey_id>/conflicts/<int:conflict_id>/delete', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_delete_conflict(survey_id, conflict_id):
     survey = Survey.query.get_or_404(survey_id)
     if survey.creator_id != current_user.id and not current_user.has_role('admin'):
@@ -623,7 +644,6 @@ def survey_delete_conflict(survey_id, conflict_id):
 
 @app.route('/surveys/<int:survey_id>/conflicts/import-csv', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_import_conflicts_csv(survey_id):
     import csv, io
     survey = Survey.query.get_or_404(survey_id)
@@ -690,7 +710,6 @@ def survey_import_conflicts_csv(survey_id):
 
 @app.route('/surveys/<int:survey_id>/items/<int:item_id>/edit', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_edit_item(survey_id, item_id):
     """Edit an item in the survey."""
     survey = Survey.query.get_or_404(survey_id)
@@ -750,7 +769,6 @@ def survey_edit_item(survey_id, item_id):
 
 @app.route('/surveys/<int:survey_id>/participants/add', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_add_participant(survey_id):
     """Add an existing user to the survey."""
     survey = Survey.query.get_or_404(survey_id)
@@ -759,6 +777,16 @@ def survey_add_participant(survey_id):
 
     user_id = request.form.get('user_id', type=int)
     user = User.query.get_or_404(user_id)
+
+    # Only allow adding users who have already joined one of the creator's surveys
+    if not current_user.has_role('admin'):
+        known_ids = {u.id for u in _known_users_for(current_user.id)}
+        if user.id not in known_ids:
+            msg = 'You can only add users who have already joined one of your surveys.'
+            if is_ajax():
+                return jsonify(success=False, message=msg)
+            flash(msg, 'danger')
+            return redirect(url_for('survey_edit', survey_id=survey.id))
 
     # Check if already a participant
     existing = SurveyParticipant.query.filter_by(survey_id=survey.id, user_id=user.id).first()
@@ -780,7 +808,6 @@ def survey_add_participant(survey_id):
 
 @app.route('/surveys/<int:survey_id>/participants/<int:participant_id>/remove', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_remove_participant(survey_id, participant_id):
     """Remove a participant from the survey."""
     survey = Survey.query.get_or_404(survey_id)
@@ -805,16 +832,15 @@ def survey_remove_participant(survey_id, participant_id):
 
 @app.route('/surveys/<int:survey_id>/dummy-users/add', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_add_dummy_users(survey_id):
-    """Add dummy users with random preferences to the survey."""
+    """Add system dummy users with random preferences to the survey."""
     survey = Survey.query.get_or_404(survey_id)
     if survey.creator_id != current_user.id and not current_user.has_role('admin'):
         abort(403)
 
     count = request.form.get('count', 1, type=int)
-    if count < 1 or count > 100:
-        msg = 'Please enter a number between 1 and 100.'
+    if count < 1 or count > 1000:
+        msg = 'Please enter a number between 1 and 1000.'
         if is_ajax():
             return jsonify(success=False, message=msg)
         flash(msg, 'danger')
@@ -828,7 +854,25 @@ def survey_add_dummy_users(survey_id):
         flash(msg, 'danger')
         return redirect(url_for('survey_edit', survey_id=survey.id))
 
-    # Manual vs random weight/capacity
+    # Pick system dummies not already assigned to this survey
+    already_ids = {p.user_id for p in
+                   SurveyParticipant.query.filter_by(survey_id=survey.id, is_dummy=True)
+                   .filter(SurveyParticipant.user_id.isnot(None)).all()}
+    query = User.query.filter_by(is_system_dummy=True)
+    if already_ids:
+        query = query.filter(User.id.notin_(already_ids))
+    available = query.limit(count).all()
+
+    if not available:
+        msg = 'All system dummy users are already in this survey.'
+        if is_ajax():
+            return jsonify(success=False, message=msg)
+        flash(msg, 'warning')
+        return redirect(url_for('survey_edit', survey_id=survey.id))
+
+    actual_count = len(available)
+    existing_count = SurveyParticipant.query.filter_by(survey_id=survey.id, is_dummy=True).count()
+
     weight_random = request.form.get('dummy_weight_random') == 'on'
     capacity_random = request.form.get('dummy_capacity_random') == 'on'
     manual_weight = request.form.get('dummy_weight', type=float)
@@ -837,79 +881,55 @@ def survey_add_dummy_users(survey_id):
     if survey.use_weights and manual_weight is not None and not is_valid_weight(manual_weight):
         return jsonify(success=False, message='Weight must be a whole number or half (e.g. 1, 1.5, 2, 2.5).')
 
-    # Find the next dummy user number
-    existing_dummies = SurveyParticipant.query.filter_by(survey_id=survey.id, is_dummy=True).count()
-
-    for i in range(count):
-        dummy_name = f'Dummy User {existing_dummies + i + 1}'
+    for i, dummy_user in enumerate(available):
         participant = SurveyParticipant(
             survey_id=survey.id,
+            user_id=dummy_user.id,
             is_dummy=True,
-            dummy_name=dummy_name
+            dummy_name=f'Dummy {existing_count + i + 1}',
         )
         if survey.use_weights:
-            if weight_random or manual_weight is None:
-                participant.user_weight = random.choice([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0])
-            else:
-                participant.user_weight = manual_weight
+            participant.user_weight = (
+                random.choice([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0])
+                if weight_random or manual_weight is None else manual_weight
+            )
         if survey.require_user_capacity:
-            if capacity_random or manual_capacity is None:
-                participant.user_capacity = random.randint(1, max(1, len(items)))
-            else:
-                participant.user_capacity = manual_capacity
+            participant.user_capacity = (
+                random.randint(1, max(1, len(items)))
+                if capacity_random or manual_capacity is None else manual_capacity
+            )
         db.session.add(participant)
-        db.session.flush()  # Get the participant ID
+        db.session.flush()
 
-        # Generate random preferences based on ranking mode
         if survey.ranking_mode == 'ordinal':
-            # Random ordinal rankings (1 to n)
             ranks = list(range(1, len(items) + 1))
             random.shuffle(ranks)
             for item, rank in zip(items, ranks):
-                ranking = ItemRanking(
-                    participant_id=participant.id,
-                    item_id=item.id,
-                    rank=rank
-                )
-                db.session.add(ranking)
+                db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id, rank=rank))
         elif survey.ranking_mode == 'budget':
-            # Random point distribution
             remaining = survey.total_points
-            points_list = []
-            for j in range(len(items) - 1):
-                # Assign random portion of remaining points
+            pts_list = []
+            for _ in range(len(items) - 1):
                 pts = random.randint(0, remaining)
-                points_list.append(pts)
+                pts_list.append(pts)
                 remaining -= pts
-            points_list.append(remaining)  # Last item gets remaining
-            random.shuffle(points_list)
-            for item, pts in zip(items, points_list):
-                ranking = ItemRanking(
-                    participant_id=participant.id,
-                    item_id=item.id,
-                    points=pts
-                )
-                db.session.add(ranking)
+            pts_list.append(remaining)
+            random.shuffle(pts_list)
+            for item, pts in zip(items, pts_list):
+                db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id, points=pts))
         elif survey.ranking_mode == 'approval':
             for item in items:
-                db.session.add(ItemRanking(
-                    participant_id=participant.id,
-                    item_id=item.id,
-                    points=random.randint(0, 1),
-                ))
+                db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id,
+                                           points=random.randint(0, 1)))
         else:
-            # Rating mode: random score for each item
             for item in items:
-                rating = random.randint(survey.min_score, survey.max_score)
-                ranking = ItemRanking(
-                    participant_id=participant.id,
-                    item_id=item.id,
-                    rating=rating
-                )
-                db.session.add(ranking)
+                db.session.add(ItemRanking(participant_id=participant.id, item_id=item.id,
+                                           rating=random.randint(survey.min_score, survey.max_score)))
 
     db.session.commit()
-    msg = f'{count} dummy user(s) added with random preferences.'
+    msg = f'{actual_count} dummy user(s) added with random preferences.'
+    if actual_count < count:
+        msg += f' (Only {actual_count} system dummies were available.)'
     if is_ajax():
         return jsonify(success=True, message=msg)
     flash(msg, 'success')
@@ -918,7 +938,6 @@ def survey_add_dummy_users(survey_id):
 
 @app.route('/surveys/<int:survey_id>/dummy-users/remove-all', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_remove_all_dummy_users(survey_id):
     """Remove all dummy users from the survey."""
     survey = Survey.query.get_or_404(survey_id)
@@ -940,7 +959,6 @@ def survey_remove_all_dummy_users(survey_id):
 
 @app.route('/surveys/<int:survey_id>/dummy-users/regenerate', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_regenerate_dummy_data(survey_id):
     """Regenerate random ratings for all dummy users."""
     survey = Survey.query.get_or_404(survey_id)
@@ -1002,7 +1020,6 @@ def survey_regenerate_dummy_data(survey_id):
 
 @app.route('/surveys/<int:survey_id>/dummy-users/<int:participant_id>/edit-ratings', methods=['GET', 'POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_edit_dummy_ratings(survey_id, participant_id):
     """Edit ratings for a dummy user."""
     survey = Survey.query.get_or_404(survey_id)
@@ -1060,7 +1077,6 @@ def survey_edit_dummy_ratings(survey_id, participant_id):
 
 @app.route('/surveys/<int:survey_id>/ratings/update', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_update_rating(survey_id):
     """Update a single rating value (AJAX only)."""
     survey = Survey.query.get_or_404(survey_id)
@@ -1103,7 +1119,6 @@ def survey_update_rating(survey_id):
 
 @app.route('/surveys/<int:survey_id>/participants/<int:participant_id>/update-field', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_update_participant_field(survey_id, participant_id):
     """Update a single field on a participant (AJAX only)."""
     survey = Survey.query.get_or_404(survey_id)
@@ -1141,7 +1156,6 @@ def survey_update_participant_field(survey_id, participant_id):
 
 @app.route('/surveys/<int:survey_id>/run-algorithm', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_run_algorithm(survey_id):
     """Run an algorithm on the survey data."""
     survey = Survey.query.get_or_404(survey_id)
@@ -1336,7 +1350,6 @@ def survey_run_algorithm(survey_id):
 
 @app.route('/surveys/<int:survey_id>/results')
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_results(survey_id):
     """View allocation results for a survey."""
     survey = Survey.query.get_or_404(survey_id)
@@ -1361,7 +1374,6 @@ def survey_results(survey_id):
 
 @app.route('/surveys/<int:survey_id>/results/<int:result_id>/delete', methods=['POST'])
 @auth_required()
-@roles_accepted('admin', 'moderator')
 def survey_delete_result(survey_id, result_id):
     """Delete an allocation result."""
     survey = Survey.query.get_or_404(survey_id)
@@ -1574,8 +1586,9 @@ def run_migrations():
     """Apply any schema changes that db.create_all() won't handle (ALTER TABLE)."""
     with db.engine.connect() as conn:
         for table, column, col_type in [
-            ('allocation_result', 'category', 'VARCHAR(50)'),
-            ('survey',            'category', 'VARCHAR(50)'),
+            ('allocation_result', 'category',         'VARCHAR(50)'),
+            ('survey',            'category',         'VARCHAR(50)'),
+            ('user',              'is_system_dummy',  'BOOLEAN DEFAULT 0'),
         ]:
             cols = [row[1] for row in conn.execute(db.text(f"PRAGMA table_info({table})"))]
             if column not in cols:
@@ -1583,11 +1596,44 @@ def run_migrations():
                 conn.commit()
 
 
+def create_system_dummies(count=1000):
+    """Ensure exactly `count` permanent system dummy users exist in the DB."""
+    existing = User.query.filter_by(is_system_dummy=True).count()
+    needed = count - existing
+    if needed <= 0:
+        return
+    # Hash the placeholder password only once — dummies can never log in (active=False)
+    dummy_pw = hash_password('__system_dummy_account__')
+    for i in range(existing + 1, existing + needed + 1):
+        db.session.add(User(
+            username=f'__dummy_{i:04d}__',
+            email=f'dummy_{i:04d}@system.internal',
+            password=dummy_pw,
+            fs_uniquifier=str(uuid.uuid4()),
+            active=False,
+            is_system_dummy=True,
+        ))
+    db.session.commit()
+
+
+def grant_moderator_to_existing_users():
+    """Give the moderator role to every real user who doesn't have it yet."""
+    mod_role = user_datastore.find_role('moderator')
+    if not mod_role:
+        return
+    for user in User.query.filter_by(is_system_dummy=False, active=True).all():
+        if not user.has_role('moderator') and not user.has_role('admin'):
+            user_datastore.add_role_to_user(user, mod_role)
+    db.session.commit()
+
+
 with app.app_context():
     db.create_all()
     run_migrations()
     create_roles()
     create_admin_user()
+    grant_moderator_to_existing_users()
+    create_system_dummies(1000)
 
 if __name__ == '__main__':
     app.run(debug=True, host="0.0.0.0", port=5032)

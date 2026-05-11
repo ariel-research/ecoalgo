@@ -24,11 +24,9 @@
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('my_surveys') }}">My Participations</a>
                         </li>
-                        {% if current_user.has_role('admin') or current_user.has_role('moderator') %}
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('moderator_panel') }}">Moderator</a>
-                            </li>
-                        {% endif %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('survey_list') }}">Manage Surveys</a>
+                        </li>
                         {% if current_user.has_role('admin') %}
                             <li class="nav-item dropdown">
                                 <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">

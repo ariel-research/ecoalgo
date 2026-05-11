@@ -204,11 +204,11 @@
         </div>
     </div>
 
-    <!-- Participants Section -->
+    <!-- Participants Section (real users only) -->
     <div class="col-md-6">
         <div class="card mb-4">
             <div class="card-header">
-                <h5 class="mb-0">Participants (<span id="participants-count">{{ survey.participants.count() }}</span>)</h5>
+                <h5 class="mb-0">Participants (<span id="participants-count">{{ survey.participants.filter_by(is_dummy=False).count() }}</span>)</h5>
             </div>
             <div class="card-body">
                 <!-- Add Participant Form -->
@@ -216,8 +216,8 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="input-group">
                         <select class="form-select" name="user_id" required>
-                            <option value="">Select user to add...</option>
-                            {% for user in users %}
+                            <option value="">Select user to add…</option>
+                            {% for user in known_users %}
                                 {% if not survey.participants.filter_by(user_id=user.id).first() %}
                                 <option value="{{ user.id }}">{{ user.email }}</option>
                                 {% endif %}
@@ -225,11 +225,17 @@
                         </select>
                         <button type="submit" class="btn btn-success">Add</button>
                     </div>
+                    {% if not known_users %}
+                    <div class="form-text text-muted mt-1">
+                        No known users yet — share the invite link so users can join this or another survey first.
+                    </div>
+                    {% endif %}
                 </form>
 
-                <!-- Participants List -->
+                <!-- Participants List (real users only) -->
                 <div id="participants-table-container">
-                {% if survey.participants.count() > 0 %}
+                {% set real_participants = survey.participants.filter_by(is_dummy=False).all() %}
+                {% if real_participants %}
                 <table class="table table-sm">
                     <thead>
                         <tr>
@@ -245,19 +251,14 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for participant in survey.participants %}
+                        {% for participant in real_participants %}
                         <tr data-participant-id="{{ participant.id }}">
-                            <td>
-                                {{ participant.get_display_name() }}
-                                {% if participant.is_dummy %}
-                                <span class="badge bg-warning text-dark">Dummy</span>
-                                {% endif %}
-                            </td>
+                            <td>{{ participant.get_display_name() }}</td>
                             {% if survey.use_weights %}
-                            <td class="{% if participant.is_dummy %}editable-cell{% endif %}" {% if participant.is_dummy %}data-field="user_weight" data-participant-id="{{ participant.id }}"{% endif %}>{{ participant.user_weight or '-' }}</td>
+                            <td>{{ participant.user_weight or '-' }}</td>
                             {% endif %}
                             {% if survey.require_user_capacity %}
-                            <td class="{% if participant.is_dummy %}editable-cell{% endif %}" {% if participant.is_dummy %}data-field="user_capacity" data-participant-id="{{ participant.id }}"{% endif %}>{{ participant.user_capacity or '-' }}</td>
+                            <td>{{ participant.user_capacity or '-' }}</td>
                             {% endif %}
                             <td>
                                 {% if participant.rankings.count() > 0 %}
@@ -266,10 +267,7 @@
                                 <span class="badge bg-secondary">No</span>
                                 {% endif %}
                             </td>
-                            <td class="text-nowrap">
-                                {% if participant.is_dummy %}
-                                <a href="{{ url_for('survey_edit_dummy_ratings', survey_id=survey.id, participant_id=participant.id) }}" class="btn btn-sm btn-outline-primary">Edit Ratings</a>
-                                {% endif %}
+                            <td>
                                 <button type="button" class="btn btn-sm btn-outline-danger btn-remove-participant" data-participant-id="{{ participant.id }}">Remove</button>
                             </td>
                         </tr>
@@ -277,11 +275,63 @@
                     </tbody>
                 </table>
                 {% else %}
-                <p class="text-muted">No participants yet. Share the invite link or add users manually.</p>
+                <p class="text-muted">No participants yet. Share the invite link so users can join.</p>
                 {% endif %}
                 </div>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Dummy Users Section -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Dummy Users <span class="badge bg-secondary ms-1">{{ dummy_count }}</span></h5>
+        <small class="text-muted">Drawn from 1 000 system dummies</small>
+    </div>
+    <div class="card-body">
+        <form id="add-dummy-form" class="mb-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label for="dummy_count" class="form-label">How many to add</label>
+                    <input type="number" class="form-control" id="dummy_count" name="count" value="5" min="1" max="1000" style="width: 100px;">
+                </div>
+                {% if survey.use_weights %}
+                <div class="col-auto">
+                    <label class="form-label">Weight</label>
+                    <div class="input-group" style="width: 180px;">
+                        <input type="number" class="form-control" name="dummy_weight" placeholder="Random" min="0.5" step="0.5" id="dummy-weight-input">
+                        <div class="input-group-text">
+                            <input class="form-check-input mt-0" type="checkbox" name="dummy_weight_random" id="dummy-weight-random" checked title="Random">
+                            <label class="ms-1 small" for="dummy-weight-random">Rnd</label>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                {% if survey.require_user_capacity %}
+                <div class="col-auto">
+                    <label class="form-label">Capacity</label>
+                    <div class="input-group" style="width: 180px;">
+                        <input type="number" class="form-control" name="dummy_capacity" placeholder="Random" min="1" id="dummy-capacity-input">
+                        <div class="input-group-text">
+                            <input class="form-check-input mt-0" type="checkbox" name="dummy_capacity_random" id="dummy-capacity-random" checked title="Random">
+                            <label class="ms-1 small" for="dummy-capacity-random">Rnd</label>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-warning">Use Dummy Users</button>
+                </div>
+            </div>
+        </form>
+        {% if dummy_count > 0 %}
+        <div class="d-flex gap-2" id="dummy-actions">
+            <button type="button" class="btn btn-outline-danger" id="btn-remove-all-dummies" onclick="if(!confirm('Remove all dummy users from this survey?')) return;">Remove All</button>
+            <button type="button" class="btn btn-outline-warning" id="btn-regenerate-dummies" onclick="if(!confirm('Regenerate all dummy user ratings with new random data?')) return;">Regenerate Data</button>
+        </div>
+        {% endif %}
     </div>
 </div>
 
@@ -369,58 +419,6 @@
         </div>
     </div>
 </div>
-</div>
-
-<!-- Dummy Users Section -->
-<div class="card mb-4">
-    <div class="card-header">
-        <h5 class="mb-0">Dummy Users</h5>
-    </div>
-    <div class="card-body">
-        <p class="text-muted">Add dummy users with randomly generated preferences for testing or demonstration purposes.</p>
-        <form id="add-dummy-form" class="mb-3">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="row g-2 align-items-end">
-                <div class="col-auto">
-                    <label for="dummy_count" class="form-label">Number of dummy users</label>
-                    <input type="number" class="form-control" id="dummy_count" name="count" value="5" min="1" max="100" style="width: 100px;">
-                </div>
-                {% if survey.use_weights %}
-                <div class="col-auto">
-                    <label class="form-label">Weight</label>
-                    <div class="input-group" style="width: 180px;">
-                        <input type="number" class="form-control" name="dummy_weight" placeholder="Random" min="0.5" step="0.5" id="dummy-weight-input">
-                        <div class="input-group-text">
-                            <input class="form-check-input mt-0" type="checkbox" name="dummy_weight_random" id="dummy-weight-random" checked title="Random">
-                            <label class="ms-1 small" for="dummy-weight-random">Rnd</label>
-                        </div>
-                    </div>
-                </div>
-                {% endif %}
-                {% if survey.require_user_capacity %}
-                <div class="col-auto">
-                    <label class="form-label">Capacity</label>
-                    <div class="input-group" style="width: 180px;">
-                        <input type="number" class="form-control" name="dummy_capacity" placeholder="Random" min="1" id="dummy-capacity-input">
-                        <div class="input-group-text">
-                            <input class="form-check-input mt-0" type="checkbox" name="dummy_capacity_random" id="dummy-capacity-random" checked title="Random">
-                            <label class="ms-1 small" for="dummy-capacity-random">Rnd</label>
-                        </div>
-                    </div>
-                </div>
-                {% endif %}
-                <div class="col-auto">
-                    <button type="submit" class="btn btn-warning">Add Dummy Users</button>
-                </div>
-            </div>
-        </form>
-        {% if survey.participants.filter_by(is_dummy=True).count() > 0 %}
-        <div class="d-flex gap-2" id="dummy-actions">
-            <button type="button" class="btn btn-outline-danger" id="btn-remove-all-dummies" onclick="if(!confirm('Remove all dummy users? Their ratings will be deleted.')) return;">Remove All Dummy Users</button>
-            <button type="button" class="btn btn-outline-warning" id="btn-regenerate-dummies" onclick="if(!confirm('Regenerate all dummy user ratings with new random data?')) return;">Regenerate Dummy Data</button>
-        </div>
-        {% endif %}
-    </div>
 </div>
 
 <!-- Rating Table -->

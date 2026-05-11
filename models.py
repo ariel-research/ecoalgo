@@ -32,6 +32,8 @@ class User(db.Model, UserMixin):
     active = db.Column(db.Boolean, default=True)
     fs_uniquifier = db.Column(db.String(64), unique=True, nullable=False)
 
+    is_system_dummy = db.Column(db.Boolean, default=False, server_default='0')
+
     # Tracking fields (optional but useful)
     confirmed_at = db.Column(db.DateTime)
     last_login_at = db.Column(db.DateTime)
