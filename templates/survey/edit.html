@@ -57,9 +57,9 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-2 mb-3" id="edit-ranking-mode-col" style="{{ 'display:none' if survey.category in ('budget_allocation', 'approval_voting', 'participatory_budgeting') else '' }}">
+                <div class="col-md-2 mb-3" id="edit-ranking-mode-col" style="{{ 'display:none' if survey.category in ('approval_voting', 'participatory_budgeting') else '' }}">
                     <label for="ranking_mode" class="form-label">Mode</label>
-                    <select class="form-select" id="ranking_mode" name="ranking_mode" onchange="toggleModeFields()" {{ 'disabled' if survey.category in ('budget_allocation', 'approval_voting', 'participatory_budgeting') }}>
+                    <select class="form-select" id="ranking_mode" name="ranking_mode" onchange="toggleModeFields()" {{ 'disabled' if survey.category in ('approval_voting', 'participatory_budgeting') }}>
                         <option value="ordinal" {{ 'selected' if survey.ranking_mode == 'ordinal' }}>Ordinal</option>
                         <option value="rating"  {{ 'selected' if survey.ranking_mode == 'rating' }}>Rating</option>
                     </select>
@@ -933,17 +933,16 @@ function algoShowDescription(sel) {
 
 // ==================== CATEGORY CHANGE (settings form) ====================
 function editOnCategoryChange(cat) {
-    const isBudget   = cat === 'budget_allocation';
     const isApproval = cat === 'approval_voting';
     const isPB       = cat === 'participatory_budgeting';
-    const hideMode   = isBudget || isApproval || isPB;
+    const hideMode   = isApproval || isPB;
     const modeCol    = document.getElementById('edit-ranking-mode-col');
     const modeSel    = document.getElementById('ranking_mode');
     const budgetFld  = document.getElementById('budget-field');
 
     modeCol.style.display   = hideMode ? 'none' : '';
     modeSel.disabled        = hideMode;
-    budgetFld.style.display = (isBudget || isPB) ? '' : 'none';
+    budgetFld.style.display = isPB ? '' : 'none';
     if (hideMode) {
         document.getElementById('rating-field').style.display = 'none';
     } else {

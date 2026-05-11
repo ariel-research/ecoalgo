@@ -9,9 +9,8 @@ To add a new library:
 """
 
 CATEGORIES = {
-    'fair_division':           'Fair Division',
-    'capacitated_allocation':  'Capacitated & Weighted Allocation',
-    'budget_allocation':       'Budget Allocation',
+    'fair_division':           'Fair Allocation',
+    'capacitated_allocation':  'Fair Allocation - Capacities and Weights',
     'approval_voting':         'Approval Voting',
     'participatory_budgeting': 'Participatory Budgeting',
 }
@@ -130,7 +129,7 @@ def build_pabutools_instance_and_profile(survey):
 
 ALGORITHMS = {
 
-    # ── Fair Division ──────────────────────────────────────────────────────────
+    # ── Fair Allocation ────────────────────────────────────────────────────────
 
     'round_robin': {
         'category':     'fair_division',
@@ -277,7 +276,7 @@ ALGORITHMS = {
         'builder':      build_standard_instance,
     },
 
-    # ── Capacitated & Weighted Allocation ──────────────────────────────────────
+    # ── Fair Allocation - Capacities and Weights ──────────────────────────────
 
     'iterated_maximum_matching': {
         'category':     'capacitated_allocation',

@@ -90,12 +90,6 @@ CATEGORY_SETTINGS = {
         'require_user_capacity':  True,
         'use_item_capacity':      True,
     },
-    'budget_allocation': {
-        'use_weights':            False,
-        'require_user_capacity':  False,
-        'use_item_capacity':      False,
-        'ranking_mode':           'budget',   # forced — participants distribute points
-    },
     'approval_voting': {
         'use_weights':            False,
         'require_user_capacity':  False,
@@ -166,11 +160,7 @@ CATEGORY_INFO = {
     },
     'capacitated_allocation': {
         'icon':        '🎓',
-        'description': 'Multi-seat allocation where agents have weights and capacity limits — suited for course or seat assignment problems.',
-    },
-    'budget_allocation': {
-        'icon':        '💰',
-        'description': 'Agents distribute a fixed budget of points across items to express preferences; algorithms produce proportional allocations.',
+        'description': 'Multi-seat allocation where agents have capacity limits and weights — suited for course or seat assignment problems.',
     },
     'approval_voting': {
         'icon':        '✅',
