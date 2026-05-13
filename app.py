@@ -83,7 +83,7 @@ CATEGORY_SETTINGS = {
     'fair_division': {
         'use_weights':            False,
         'require_user_capacity':  False,
-        'use_item_capacity':      False,
+        'use_item_capacity':      True,  # each item goes to exactly 1 agent
     },
     'capacitated_allocation': {
         'use_weights':            True,

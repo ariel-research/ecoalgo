@@ -50,11 +50,14 @@ def _get_item_capacities(survey):
 
 
 def build_standard_instance(survey):
-    """fairpyx Instance with valuations + item capacities."""
+    """fairpyx Instance with valuations + item capacities + agent capacities."""
     from fairpyx import Instance
+    num_items = survey.items.count()
+    agent_capacities = {p.get_display_name(): num_items for p in survey.participants.all()}
     return Instance(
         valuations=_survey_to_valuations(survey),
         item_capacities=_get_item_capacities(survey),
+        agent_capacities=agent_capacities,
     )
 
 
