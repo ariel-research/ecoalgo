@@ -34,6 +34,27 @@
                         <div id="category-hint" class="form-text mt-1" style="display:none"></div>
                     </div>
 
+                    <!-- Capacitated allocation options (only for capacitated_allocation) -->
+                    <div class="mb-3 border rounded p-3" id="capacitated-options" style="display:none">
+                        <p class="fw-semibold mb-2">Allocation options</p>
+                        <div class="form-check mb-1">
+                            <input class="form-check-input" type="checkbox" name="use_item_capacity" id="use_item_capacity">
+                            <label class="form-check-label" for="use_item_capacity">Items have different capacities <span class="text-muted small">(if unchecked, every item has capacity 1)</span></label>
+                        </div>
+                        <div class="form-check mb-1">
+                            <input class="form-check-input" type="checkbox" name="use_item_weights" id="use_item_weights">
+                            <label class="form-check-label" for="use_item_weights">Items have different weights <span class="text-muted small">(if unchecked, every item has weight 1)</span></label>
+                        </div>
+                        <div class="form-check mb-1">
+                            <input class="form-check-input" type="checkbox" name="require_user_capacity" id="require_user_capacity">
+                            <label class="form-check-label" for="require_user_capacity">Agents have different capacities <span class="text-muted small">(if unchecked, every agent can receive all items)</span></label>
+                        </div>
+                        <div class="form-check mb-1">
+                            <input class="form-check-input" type="checkbox" name="use_weights" id="use_weights">
+                            <label class="form-check-label" for="use_weights">Agents have different weights <span class="text-muted small">(if unchecked, every agent's weight equals the total weight of all items)</span></label>
+                        </div>
+                    </div>
+
                     <!-- Ranking mode (hidden for approval_voting / participatory_budgeting — forced) -->
                     <div class="mb-3" id="ranking-mode-section" style="display:none">
                         <label class="form-label">Preference Input Mode *</label>
@@ -94,9 +115,11 @@ function onCategoryChange(cat) {
     hintEl.textContent = CATEGORY_HINTS[cat] || '';
     hintEl.style.display = cat ? '' : 'none';
 
-    const isApproval = cat === 'approval_voting';
-    const isPB       = cat === 'participatory_budgeting';
-    const hideMode   = isApproval || isPB;
+    const isApproval     = cat === 'approval_voting';
+    const isPB           = cat === 'participatory_budgeting';
+    const isCapacitated  = cat === 'capacitated_allocation';
+    const hideMode       = isApproval || isPB;
+    document.getElementById('capacitated-options').style.display = isCapacitated ? '' : 'none';
     document.getElementById('ranking-mode-section').style.display = (!cat || hideMode) ? 'none' : '';
     document.getElementById('budget-field').style.display = isPB ? 'block' : 'none';
     if (!hideMode) {

@@ -45,8 +45,7 @@ def _survey_to_valuations(survey):
 def _get_item_capacities(survey):
     if survey.use_item_capacity:
         return {item.name: item.capacity for item in survey.items.all()}
-    n = survey.participants.count()
-    return {item.name: max(n, 1) for item in survey.items.all()}
+    return {item.name: 1 for item in survey.items.all()}
 
 
 def build_standard_instance(survey):
@@ -66,20 +65,23 @@ def build_capacitated_instance(survey):
     Used by algorithms designed for multi-seat / weighted allocation."""
     from fairpyx import Instance
     participants = survey.participants.all()
+    items = survey.items.all()
+    num_items = len(items)
 
-    agent_capacities = None
     if survey.require_user_capacity:
         caps = {p.get_display_name(): p.user_capacity
                 for p in participants if p.user_capacity is not None}
-        if caps:
-            agent_capacities = caps
+        agent_capacities = caps if caps else {p.get_display_name(): num_items for p in participants}
+    else:
+        agent_capacities = {p.get_display_name(): num_items for p in participants}
 
-    agent_weights = None
     if survey.use_weights:
         weights = {p.get_display_name(): p.user_weight
                    for p in participants if p.user_weight is not None}
-        if weights:
-            agent_weights = weights
+        agent_weights = weights if weights else None
+    else:
+        total_item_weight = sum(item.weight for item in items) or 1.0
+        agent_weights = {p.get_display_name(): total_item_weight for p in participants}
 
     return Instance(
         valuations=_survey_to_valuations(survey),

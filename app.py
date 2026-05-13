@@ -86,9 +86,10 @@ CATEGORY_SETTINGS = {
         'use_item_capacity':      True,  # each item goes to exactly 1 agent
     },
     'capacitated_allocation': {
-        'use_weights':            True,
-        'require_user_capacity':  True,
-        'use_item_capacity':      True,
+        'use_weights':            False,  # overridden by form choices at creation/edit
+        'require_user_capacity':  False,
+        'use_item_capacity':      False,
+        'use_item_weights':       False,
     },
     'approval_voting': {
         'use_weights':            False,
@@ -106,14 +107,22 @@ CATEGORY_SETTINGS = {
 }
 
 
-def _apply_category_settings(survey, category, ranking_mode_form_value):
-    """Set survey flags based on the chosen category."""
+def _apply_category_settings(survey, category, ranking_mode_form_value, cap_overrides=None):
+    """Set survey flags based on the chosen category.
+
+    For capacitated_allocation, cap_overrides should be a dict with the four
+    boolean flags chosen by the moderator at creation/edit time.
+    """
     settings = CATEGORY_SETTINGS[category]
     survey.category = category
     survey.use_weights = settings['use_weights']
     survey.require_user_capacity = settings['require_user_capacity']
     survey.use_item_capacity = settings['use_item_capacity']
+    survey.use_item_weights = settings.get('use_item_weights', False)
     survey.ranking_mode = settings.get('ranking_mode') or ranking_mode_form_value or 'ordinal'
+    if cap_overrides:
+        for attr, val in cap_overrides.items():
+            setattr(survey, attr, val)
 
 
 def _known_users_for(creator_id):
@@ -335,7 +344,15 @@ def survey_create():
             min_score=min_score,
             max_score=max_score,
         )
-        _apply_category_settings(survey, category, ranking_mode)
+        cap_overrides = None
+        if category == 'capacitated_allocation':
+            cap_overrides = {
+                'use_item_capacity':    request.form.get('use_item_capacity')    == 'on',
+                'use_item_weights':     request.form.get('use_item_weights')     == 'on',
+                'require_user_capacity': request.form.get('require_user_capacity') == 'on',
+                'use_weights':          request.form.get('use_weights')          == 'on',
+            }
+        _apply_category_settings(survey, category, ranking_mode, cap_overrides)
         db.session.add(survey)
         db.session.commit()
 
@@ -408,7 +425,15 @@ def survey_update(survey_id):
 
     new_category = request.form.get('category', survey.category)
     if new_category in CATEGORY_SETTINGS:
-        _apply_category_settings(survey, new_category, request.form.get('ranking_mode', survey.ranking_mode))
+        cap_overrides = None
+        if new_category == 'capacitated_allocation':
+            cap_overrides = {
+                'use_item_capacity':    request.form.get('use_item_capacity')    == 'on',
+                'use_item_weights':     request.form.get('use_item_weights')     == 'on',
+                'require_user_capacity': request.form.get('require_user_capacity') == 'on',
+                'use_weights':          request.form.get('use_weights')          == 'on',
+            }
+        _apply_category_settings(survey, new_category, request.form.get('ranking_mode', survey.ranking_mode), cap_overrides)
     else:
         survey.ranking_mode = request.form.get('ranking_mode', survey.ranking_mode)
 
@@ -532,7 +557,7 @@ def survey_import_items_csv(survey_id):
                 continue
 
         weight = 1.0
-        if survey.use_weights:
+        if survey.use_item_weights:
             raw = row[col].strip() if col < len(row) else ''
             col += 1
             try:
@@ -1576,9 +1601,10 @@ def run_migrations():
     """Apply any schema changes that db.create_all() won't handle (ALTER TABLE)."""
     with db.engine.connect() as conn:
         for table, column, col_type in [
-            ('allocation_result', 'category',         'VARCHAR(50)'),
-            ('survey',            'category',         'VARCHAR(50)'),
-            ('user',              'is_system_dummy',  'BOOLEAN DEFAULT 0'),
+            ('allocation_result', 'category',          'VARCHAR(50)'),
+            ('survey',            'category',          'VARCHAR(50)'),
+            ('survey',            'use_item_weights',  'BOOLEAN DEFAULT 0'),
+            ('user',              'is_system_dummy',   'BOOLEAN DEFAULT 0'),
         ]:
             cols = [row[1] for row in conn.execute(db.text(f"PRAGMA table_info({table})"))]
             if column not in cols:

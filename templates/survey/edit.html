@@ -81,6 +81,27 @@
                 <label for="description" class="form-label">Description</label>
                 <textarea class="form-control" id="description" name="description" rows="2">{{ survey.description or '' }}</textarea>
             </div>
+            {% if survey.category == 'capacitated_allocation' %}
+            <div class="mb-3 border rounded p-3">
+                <p class="fw-semibold mb-2">Allocation options</p>
+                <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" name="use_item_capacity" id="edit-use-item-capacity" {{ 'checked' if survey.use_item_capacity }}>
+                    <label class="form-check-label" for="edit-use-item-capacity">Items have different capacities <span class="text-muted small">(if unchecked, every item has capacity 1)</span></label>
+                </div>
+                <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" name="use_item_weights" id="edit-use-item-weights" {{ 'checked' if survey.use_item_weights }}>
+                    <label class="form-check-label" for="edit-use-item-weights">Items have different weights <span class="text-muted small">(if unchecked, every item has weight 1)</span></label>
+                </div>
+                <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" name="require_user_capacity" id="edit-require-user-capacity" {{ 'checked' if survey.require_user_capacity }}>
+                    <label class="form-check-label" for="edit-require-user-capacity">Agents have different capacities <span class="text-muted small">(if unchecked, every agent can receive all items)</span></label>
+                </div>
+                <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" name="use_weights" id="edit-use-weights" {{ 'checked' if survey.use_weights }}>
+                    <label class="form-check-label" for="edit-use-weights">Agents have different weights <span class="text-muted small">(if unchecked, every agent's weight equals the total weight of all items)</span></label>
+                </div>
+            </div>
+            {% endif %}
             <button type="submit" class="btn btn-primary">Update Settings</button>
         </form>
     </div>
@@ -123,7 +144,7 @@
                             <input type="number" class="form-control" name="capacity" placeholder="Cap" value="1" min="1" style="width: 80px;">
                         </div>
                         {% endif %}
-                        {% if survey.use_weights or survey.category == 'participatory_budgeting' %}
+                        {% if survey.use_item_weights or survey.category == 'participatory_budgeting' %}
                         <div class="col-auto">
                             <label class="form-label">{{ 'Cost' if survey.category == 'participatory_budgeting' else 'Weight' }}</label>
                             <input type="number" class="form-control" name="weight" placeholder="{{ 'Cost' if survey.category == 'participatory_budgeting' else 'Wt' }}" value="1.0" min="0" step="0.1" style="width: 80px;">
@@ -148,7 +169,7 @@
                         <div class="card card-body bg-light mt-1 p-2">
                             <div class="text-muted small mb-2">
                                 Expected columns (no header row):
-                                <strong>name</strong>{% if survey.use_item_capacity %}, <strong>capacity</strong>{% endif %}{% if survey.use_weights or survey.category == 'participatory_budgeting' %}, <strong>{{ 'cost' if survey.category == 'participatory_budgeting' else 'weight' }}</strong>{% endif %}, <strong>description</strong> (optional)
+                                <strong>name</strong>{% if survey.use_item_capacity %}, <strong>capacity</strong>{% endif %}{% if survey.use_item_weights or survey.category == 'participatory_budgeting' %}, <strong>{{ 'cost' if survey.category == 'participatory_budgeting' else 'weight' }}</strong>{% endif %}, <strong>description</strong> (optional)
                             </div>
                             <div class="d-flex gap-2 align-items-center">
                                 <input type="file" class="form-control form-control-sm" id="csv-file-input" accept=".csv">
@@ -168,7 +189,7 @@
                             {% if survey.use_item_capacity %}
                             <th>Capacity</th>
                             {% endif %}
-                            {% if survey.use_weights or survey.category == 'participatory_budgeting' %}
+                            {% if survey.use_item_weights or survey.category == 'participatory_budgeting' %}
                             <th>{{ 'Cost' if survey.category == 'participatory_budgeting' else 'Weight' }}</th>
                             {% endif %}
                             <th></th>
@@ -186,7 +207,7 @@
                             {% if survey.use_item_capacity %}
                             <td class="editable-cell" data-field="capacity" data-item-id="{{ item.id }}">{{ item.capacity }}</td>
                             {% endif %}
-                            {% if survey.use_weights or survey.category == 'participatory_budgeting' %}
+                            {% if survey.use_item_weights or survey.category == 'participatory_budgeting' %}
                             <td class="editable-cell" data-field="weight" data-item-id="{{ item.id }}">{{ item.weight }}</td>
                             {% endif %}
                             <td class="text-nowrap">
@@ -325,7 +346,7 @@
             </div>
         </form>
         {% if dummy_count > 0 %}
-        <div class="d-flex gap-2" id="dummy-actions">
+        <div class="d-flex gap-2 mb-3" id="dummy-actions">
             <button type="button" class="btn btn-outline-danger" id="btn-remove-all-dummies" onclick="if(!confirm('Remove all dummy users from this survey?')) return;">Remove All</button>
             <button type="button" class="btn btn-outline-warning" id="btn-regenerate-dummies" onclick="if(!confirm('Regenerate all dummy user ratings with new random data?')) return;">Regenerate Data</button>
         </div>
@@ -434,6 +455,9 @@
                 <thead>
                     <tr>
                         <th>Participant</th>
+                        {% if survey.require_user_capacity %}
+                        <th class="text-center table-secondary border-start border-end" style="white-space:nowrap">Capacity</th>
+                        {% endif %}
                         {% for item in items %}
                         <th class="text-center">{{ item.name }}</th>
                         {% endfor %}
@@ -448,6 +472,14 @@
                             <span class="badge bg-warning text-dark">D</span>
                             {% endif %}
                         </td>
+                        {% if survey.require_user_capacity %}
+                        {% if row.participant.is_dummy %}
+                        <td class="text-center table-secondary border-start border-end editable-cell"
+                            data-field="user_capacity" data-participant-id="{{ row.participant.id }}">{{ row.participant.user_capacity or '-' }}</td>
+                        {% else %}
+                        <td class="text-center table-secondary border-start border-end text-muted">{{ row.participant.user_capacity or '-' }}</td>
+                        {% endif %}
+                        {% endif %}
                         {% for item in items %}
                         {% set editable = row.participant.is_dummy %}
                         {% if survey.ranking_mode == 'approval' %}

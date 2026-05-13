@@ -84,8 +84,11 @@ class Survey(db.Model):
     # Whether users must fill their own capacity
     require_user_capacity = db.Column(db.Boolean, default=False)
 
-    # Whether to use item capacities (if False, treat all items as unlimited capacity)
+    # Whether to use item capacities (if False, all items have capacity 1)
     use_item_capacity = db.Column(db.Boolean, default=False)
+
+    # Whether items have variable weights (if False, all item weights are 1)
+    use_item_weights = db.Column(db.Boolean, default=False)
 
     # Algorithm category chosen at creation time
     category = db.Column(db.String(50), nullable=True)
