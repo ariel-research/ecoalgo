@@ -156,11 +156,11 @@ def _algo_list_grouped(category):
 CATEGORY_INFO = {
     'fair_division': {
         'icon':        '⚖️',
-        'description': 'Assign items to agents based on ordinal rankings or ratings. Algorithms optimise for fairness and efficiency.',
+        'description': 'Assign items to agents based on ordinal or cardinal utilities. Algorithms guarantee various fairness and efficiency conditions.',
     },
     'capacitated_allocation': {
         'icon':        '🎓',
-        'description': 'Multi-seat allocation where agents have capacity limits and weights — suited for course or seat assignment problems.',
+        'description': 'Item allocation where both agents and items may have capacity limits and weights — suited for course seat assignment problems.',
     },
     'approval_voting': {
         'icon':        '✅',
@@ -168,7 +168,7 @@ CATEGORY_INFO = {
     },
     'participatory_budgeting': {
         'icon':        '🏛️',
-        'description': 'Agents support projects with costs; algorithms decide which projects to fund within a fixed community budget.',
+        'description': 'Agents approve subsets of projects with costs; algorithms decide which projects to fund within a fixed community budget.',
     },
 }
 

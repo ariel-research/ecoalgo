@@ -9,10 +9,10 @@ To add a new library:
 """
 
 CATEGORIES = {
-    'fair_division':           'Fair Allocation',
-    'capacitated_allocation':  'Fair Allocation - Capacities and Weights',
-    'approval_voting':         'Approval Voting',
-    'participatory_budgeting': 'Participatory Budgeting',
+    'fair_division':           'Fair Item Allocation',
+    'capacitated_allocation':  'Fair Item Allocation with Capacities and Weights',
+    'approval_voting':         'Approval-Based Committee Voting',
+    'participatory_budgeting': 'Approval-Based Participatory Budgeting',
 }
 
 
