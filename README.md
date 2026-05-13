@@ -1,6 +1,6 @@
 # EcoAlgo — Economic Algorithms Platform
 
-A web platform for running economic algorithms on real survey data. A **moderator** creates a survey, invites participants to submit their preferences, and then runs an algorithm to compute an allocation or outcome. Participants see their results without needing to know anything about the algorithm.
+A web platform for running economic algorithms on real survey data. Every registered user is a moderator, who can create a survey, invite participants to submit their preferences, and then run an algorithm to compute an allocation or outcome. Participants see their results without needing to know anything about the algorithm.
 
 ---
 
@@ -63,17 +63,7 @@ Like fair division, but each **agent** has a weight and a capacity (how many ite
 
 ---
 
-### 3. Budget Allocation (`budget_allocation`)
-Participants distribute a fixed number of points across items (sum must equal `survey.total_points`).
-
-**Ranking mode:** budget (forced)
-**Algorithm input:** `fairpyx.Instance` with point values as valuations
-
-*(No fairpyx algorithms are currently registered for this category — it is ready for additions.)*
-
----
-
-### 4. Approval Voting (`approval_voting`)
+### 3. Approval Voting (`approval_voting`)
 Participants tick the items they approve. The algorithm selects a **winning committee** of a given size.
 
 **Ranking mode:** approval (forced, stored as `ItemRanking.points = 1/0`)
@@ -90,7 +80,7 @@ Participants tick the items they approve. The algorithm selects a **winning comm
 
 ---
 
-### 5. Participatory Budgeting (`participatory_budgeting`)
+### 4. Participatory Budgeting (`participatory_budgeting`)
 Participants tick projects they support. Each project has a **cost** (`item.weight`) and the survey has a **global budget** (`survey.total_points`). The algorithm funds a subset of projects within budget.
 
 **Ranking mode:** approval (forced)
@@ -111,16 +101,15 @@ Participants tick projects they support. Each project has a **cost** (`item.weig
 ```bash
 # 1. Clone the repository
 git clone <repo-url>
-cd fd-algo-i
+cd ecoalgo
 
 # 2. Create and activate a virtual environment
 python3 -m venv venv
 source venv/bin/activate        # Linux / macOS
-venv\Scripts\activate           # Windows
+venv\Scripts\activate.ps1       # Windows Powershell
 
 # 3. Install dependencies
-pip install flask flask-sqlalchemy flask-security-too flask-wtf \
-            fairpyx abcvoting pabutools
+pip install -r requirements.txt
 
 # 4. Run the app
 python app.py
