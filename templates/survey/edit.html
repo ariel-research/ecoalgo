@@ -449,15 +449,18 @@
                             {% endif %}
                         </td>
                         {% for item in items %}
-                        {% set editable = row.participant.is_dummy and survey.ranking_mode != 'approval' %}
+                        {% set editable = row.participant.is_dummy %}
+                        {% if survey.ranking_mode == 'approval' %}
+                        <td class="text-center {% if editable %}approval-toggle{% endif %}"
+                            {% if editable %}data-participant-id="{{ row.participant.id }}" data-item-id="{{ item.id }}" data-approved="{{ '1' if row.ratings.get(item.id) == 1 else '0' }}" style="cursor:pointer" title="Click to toggle"{% endif %}>
+                            {{ '✓' if row.ratings.get(item.id) == 1 else ('✗' if row.ratings.get(item.id) == 0 else '-') }}
+                        </td>
+                        {% else %}
                         <td class="text-center {% if editable %}editable-cell{% endif %}"
                             {% if editable %}data-field="rating" data-participant-id="{{ row.participant.id }}" data-item-id="{{ item.id }}"{% endif %}>
-                            {% if survey.ranking_mode == 'approval' %}
-                                {{ '✓' if row.ratings.get(item.id) == 1 else ('✗' if row.ratings.get(item.id) == 0 else '-') }}
-                            {% else %}
-                                {{ row.ratings.get(item.id, '-') }}
-                            {% endif %}
+                            {{ row.ratings.get(item.id, '-') }}
                         </td>
+                        {% endif %}
                         {% endfor %}
                     </tr>
                     {% endfor %}
@@ -676,6 +679,32 @@ document.querySelectorAll('#rating-table .editable-cell[data-item-id]').forEach(
             if (resp.success) showToast('Rating updated');
             else showToast(resp.message || 'Update failed', 'danger');
         }).catch(function() { done(false); showToast('Network error', 'danger'); });
+    });
+});
+
+// Init click-to-toggle for approval cells
+document.querySelectorAll('#rating-table .approval-toggle').forEach(function(cell) {
+    cell.addEventListener('click', function() {
+        const approved = cell.dataset.approved === '1';
+        const newApproved = !approved;
+        ajaxPost('/surveys/' + SURVEY_ID + '/ratings/update', {
+            participant_id: cell.dataset.participantId, item_id: cell.dataset.itemId, value: newApproved ? '1' : '0'
+        }).then(function(resp) {
+            if (resp.success) {
+                cell.dataset.approved = newApproved ? '1' : '0';
+                cell.textContent = newApproved ? '✓' : '✗';
+                cell.classList.add('flash-success');
+                setTimeout(() => cell.classList.remove('flash-success'), 600);
+            } else {
+                cell.classList.add('flash-error');
+                setTimeout(() => cell.classList.remove('flash-error'), 600);
+                showToast(resp.message || 'Update failed', 'danger');
+            }
+        }).catch(function() {
+            cell.classList.add('flash-error');
+            setTimeout(() => cell.classList.remove('flash-error'), 600);
+            showToast('Network error', 'danger');
+        });
     });
 });
 
