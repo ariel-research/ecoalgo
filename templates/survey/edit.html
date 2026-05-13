@@ -461,6 +461,7 @@
                         {% for item in items %}
                         <th class="text-center">{{ item.name }}</th>
                         {% endfor %}
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -494,6 +495,11 @@
                         </td>
                         {% endif %}
                         {% endfor %}
+                        <td>
+                            {% if row.participant.is_dummy %}
+                            <button type="button" class="btn btn-sm btn-outline-danger btn-remove-participant" data-participant-id="{{ row.participant.id }}">✕</button>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
