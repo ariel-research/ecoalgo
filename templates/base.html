@@ -17,15 +17,12 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('home') }}">Home</a>
-                    </li>
                     {% if current_user.is_authenticated %}
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('my_surveys') }}">My Participations</a>
+                            <a class="nav-link" href="{{ url_for('my_surveys') }}">Participate</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('survey_list') }}">Manage Surveys</a>
+                            <a class="nav-link" href="{{ url_for('survey_list') }}">Manage</a>
                         </li>
                         {% if current_user.has_role('admin') %}
                             <li class="nav-item dropdown">
@@ -47,8 +44,6 @@
                                 Hello, {{ current_user.email }}
                                 {% if current_user.has_role('admin') %}
                                     <span class="badge bg-danger">Admin</span>
-                                {% elif current_user.has_role('moderator') %}
-                                    <span class="badge bg-warning text-dark">Mod</span>
                                 {% endif %}
                             </span>
                         </li>
