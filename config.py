@@ -46,9 +46,11 @@ class DevelopmentConfig(Config):
 
 class ProductionConfig(Config):
     DEBUG = False
-    # Set DATABASE_URL env var to your MySQL connection string, e.g.:
-    # mysql+pymysql://user:password@host:3306/fair_division
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+    SQLALCHEMY_DATABASE_URI = (
+        f"mysql+pymysql://{os.environ.get('DB_USER')}:{os.environ.get('DB_PASSWORD')}"
+        f"@{os.environ.get('DB_HOST', 'localhost')}:{os.environ.get('DB_PORT', '3306')}"
+        f"/{os.environ.get('DB_NAME', 'fair_division')}"
+    )
     SECRET_KEY = os.environ.get('SECRET_KEY')
     SECURITY_PASSWORD_SALT = os.environ.get('SECURITY_PASSWORD_SALT')
     # Recycle connections before MySQL's wait_timeout (default 8h) closes them

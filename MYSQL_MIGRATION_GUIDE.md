@@ -52,12 +52,15 @@ Set these on your production server before starting the app:
 
 ```bash
 export FLASK_ENV=production
-export DATABASE_URL="mysql+pymysql://fd_user:strong-password-here@HOST:3306/fair_division"
-export SECRET_KEY="your-strong-secret-key"
-export SECURITY_PASSWORD_SALT="your-strong-salt"
+export DB_HOST=localhost        # or your MySQL server address
+export DB_NAME=fair_division
+export DB_USER=fd_user
+export DB_PASSWORD=strong-password-here
+export SECRET_KEY=your-strong-secret-key
+export SECURITY_PASSWORD_SALT=your-strong-salt
 ```
 
-Replace `HOST` with your MySQL server address (or `localhost`).
+`DB_PORT` defaults to `3306` and `DB_HOST` defaults to `localhost` if not set.
 
 ---
 
@@ -108,11 +111,11 @@ We use `flask shell` instead of running the app here because running the app wou
 ```bash
 sqlite3mysql \
   --sqlite-file instance/fair_division.db \
-  --mysql-database fair_division \
-  --mysql-host HOST \
+  --mysql-database $DB_NAME \
+  --mysql-host $DB_HOST \
   --mysql-port 3306 \
-  --mysql-user fd_user \
-  --mysql-password strong-password-here \
+  --mysql-user $DB_USER \
+  --mysql-password $DB_PASSWORD \
   --mysql-charset utf8mb4 \
   --without-tables
 ```
