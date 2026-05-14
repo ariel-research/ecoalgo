@@ -2,7 +2,6 @@ import os
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///fair_division.db'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Flask-Security settings
@@ -38,3 +37,24 @@ class Config:
 
     # Algorithm execution timeout in seconds (default: 60)
     ALGORITHM_TIMEOUT = int(os.environ.get('ALGORITHM_TIMEOUT', 60))
+
+
+class DevelopmentConfig(Config):
+    DEBUG = True
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///fair_division.db'
+
+
+class ProductionConfig(Config):
+    DEBUG = False
+    # Set DATABASE_URL env var to your MySQL connection string, e.g.:
+    # mysql+pymysql://user:password@host:3306/fair_division
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+    SECRET_KEY = os.environ.get('SECRET_KEY')
+    SECURITY_PASSWORD_SALT = os.environ.get('SECURITY_PASSWORD_SALT')
+
+
+config = {
+    'development': DevelopmentConfig,
+    'production': ProductionConfig,
+    'default': DevelopmentConfig,
+}

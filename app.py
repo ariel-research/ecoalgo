@@ -1,7 +1,8 @@
+import os
 from flask import Flask, render_template, redirect, url_for, flash, request, abort, jsonify
 from flask_security import Security, SQLAlchemyUserDatastore, current_user, auth_required, roles_required, hash_password, user_registered
 from flask_wtf.csrf import CSRFProtect
-from config import Config
+from config import config
 from models import db, User, Role, Survey, SurveyItem, SurveyParticipant, ItemRanking, AllocationResult, ItemConflict
 from forms import ExtendedRegisterForm
 from algorithms import ALGORITHMS, CATEGORIES, get_algo_data_for_template
@@ -16,7 +17,8 @@ def is_ajax():
     return request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
 app = Flask(__name__)
-app.config.from_object(Config)
+env = os.environ.get('FLASK_ENV', 'default')
+app.config.from_object(config[env])
 
 db.init_app(app)
 
