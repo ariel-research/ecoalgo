@@ -62,6 +62,40 @@ def _extract_invite_code(html):
     return match.group(1) if match else None
 
 
+def _register_and_login(client):
+    """
+    Register a fresh unique user and return (email, password).
+    Flask-Security logs the user in automatically on registration
+    and grants the moderator role via the on_user_registered hook.
+    Use this instead of logging in as admin so tests don't depend
+    on the admin password being correct in every environment.
+    """
+    email = f"loadtest_{uuid.uuid4().hex[:10]}@test.com"
+    password = "Testpass1!"
+
+    r = client.get("/register")
+    csrf = _extract_csrf(r.text)
+    client.post(
+        "/register",
+        data={"email": email, "password": password, "csrf_token": csrf},
+        allow_redirects=True,
+    )
+    return email, password
+
+
+def _login(client, email, password):
+    """Login and mark the request as failed if the login page is returned."""
+    r = client.get("/login")
+    csrf = _extract_csrf(r.text)
+    r = client.post(
+        "/login",
+        data={"email": email, "password": password, "csrf_token": csrf, "remember": "false"},
+        allow_redirects=True,
+    )
+    if "/login" in r.url:
+        r.failure(f"Login failed for {email} — still on login page after POST")
+
+
 # ---------------------------------------------------------------------------
 # Shared survey state for ConcurrentParticipantUser
 # Set by @events.test_start, read by each virtual user in on_start.
@@ -164,21 +198,7 @@ class LoginCycleUser(HttpUser):
 
     @task
     def login_then_logout(self):
-        response = self.client.get("/login", name="/login [GET]")
-        csrf = _extract_csrf(response.text)
-
-        self.client.post(
-            "/login",
-            name="/login [POST]",
-            data={
-                "email": ADMIN_EMAIL,
-                "password": ADMIN_PASSWORD,
-                "csrf_token": csrf,
-                "remember": "false",
-            },
-            allow_redirects=True,
-        )
-
+        _login(self.client, ADMIN_EMAIL, ADMIN_PASSWORD)
         self.client.get("/logout")
 
 
@@ -206,18 +226,7 @@ class AuthBrowseUser(HttpUser):
     wait_time = between(2, 5)
 
     def on_start(self):
-        response = self.client.get("/login")
-        csrf = _extract_csrf(response.text)
-        self.client.post(
-            "/login",
-            data={
-                "email": ADMIN_EMAIL,
-                "password": ADMIN_PASSWORD,
-                "csrf_token": csrf,
-                "remember": "false",
-            },
-            allow_redirects=True,
-        )
+        _login(self.client, ADMIN_EMAIL, ADMIN_PASSWORD)
 
     def on_stop(self):
         self.client.get("/logout")
@@ -255,19 +264,8 @@ class SurveyFlowUser(HttpUser):
     item_ids = []
 
     def on_start(self):
-        # --- Login ---
-        response = self.client.get("/login")
-        csrf = _extract_csrf(response.text)
-        self.client.post(
-            "/login",
-            data={
-                "email": ADMIN_EMAIL,
-                "password": ADMIN_PASSWORD,
-                "csrf_token": csrf,
-                "remember": "false",
-            },
-            allow_redirects=True,
-        )
+        # --- Register a fresh user (gets moderator role automatically) ---
+        _register_and_login(self.client)
 
         # --- Create survey (fetch page first to get CSRF token) ---
         csrf = _get_csrf(self.client, "/surveys/create")
@@ -383,19 +381,8 @@ class AlgorithmLoadUser(HttpUser):
     item_ids = []
 
     def on_start(self):
-        # --- Login ---
-        response = self.client.get("/login")
-        csrf = _extract_csrf(response.text)
-        self.client.post(
-            "/login",
-            data={
-                "email": ADMIN_EMAIL,
-                "password": ADMIN_PASSWORD,
-                "csrf_token": csrf,
-                "remember": "false",
-            },
-            allow_redirects=True,
-        )
+        # --- Register a fresh user (gets moderator role automatically) ---
+        _register_and_login(self.client)
 
         # --- Create survey ---
         csrf = _get_csrf(self.client, "/surveys/create")
