@@ -63,64 +63,47 @@ Replace `HOST` with your MySQL server address (or `localhost`).
 
 ## Path A — Fresh MySQL Database
 
-### 1. Let Flask-SQLAlchemy create all tables
-
-```bash
-FLASK_ENV=production flask shell
-```
-
-```python
-from app import app, db
-with app.app_context():
-    db.create_all()
-```
-
-The app is now running against MySQL with an empty database.
+Set the environment variables above and run the app. On startup it automatically calls `db.create_all()`, creates default roles, the admin user, and system dummies — no manual steps needed.
 
 ---
 
 ## Path B — Export SQLite → Import into MySQL
 
-### Step 0: Back up your SQLite file first
+### Step 1: Back up your SQLite file
 
 ```bash
 cp instance/fair_division.db instance/fair_division.db.bak
 ```
 
-Never skip this. If the import fails or produces bad data, you want to restore from this backup.
+Never skip this. If the import fails you want to be able to restore.
 
-### Step 1: Stop the running app
+### Step 2: Stop the running app
 
-Make sure no writes are happening during the migration. Stop your Flask process (or put the app in maintenance mode) before proceeding.
+No writes should happen during migration. Stop your Flask process before continuing.
 
-### Step 2: Install the migration tool
+### Step 3: Install the migration tool
 
 ```bash
 pip install sqlite3-to-mysql
 ```
 
-### Step 3: Create the MySQL database
-
-Follow the [MySQL Server Setup](#mysql-server-setup) section above if you haven't already.
-
 ### Step 4: Create the schema via SQLAlchemy
 
-This is the important step. Do **not** let `sqlite3-to-mysql` create the tables — it would derive the schema from SQLite's DDL, which uses looser types and no FK enforcement. Instead, let SQLAlchemy create the tables directly from your models so the schema is exactly correct (proper column types, indexes, foreign key constraints).
+Do **not** let `sqlite3-to-mysql` create the tables — it derives the schema from SQLite's loose DDL and the result won't match what SQLAlchemy expects. Instead, run just `db.create_all()` via Flask shell so the schema is created directly from your models:
 
 ```bash
 FLASK_ENV=production flask shell
 ```
 
 ```python
-from app import app, db
-with app.app_context():
-    db.create_all()
+from app import db
+db.create_all()
 exit()
 ```
 
-### Step 5: Copy only the data (no schema)
+We use `flask shell` instead of running the app here because running the app would also create default roles, admin user, and system dummies — which would conflict with the data being imported from SQLite.
 
-Now use `sqlite3-to-mysql` with `--without-tables` so it only inserts rows into the tables SQLAlchemy already created:
+### Step 5: Copy the data
 
 ```bash
 sqlite3mysql \
@@ -134,34 +117,11 @@ sqlite3mysql \
   --without-tables
 ```
 
-Foreign key checks are disabled during import and re-enabled afterward, so row ordering is not an issue.
+`--without-tables` tells the tool to only insert rows, not recreate the schema. Foreign key checks are disabled during import and re-enabled afterward.
 
-### Step 6: Verify the migration
+### Step 6: Start the app
 
-Connect to MySQL and spot-check row counts:
-
-```sql
-USE fair_division;
-SELECT table_name, table_rows
-FROM information_schema.tables
-WHERE table_schema = 'fair_division';
-```
-
-Compare with SQLite:
-
-```bash
-sqlite3 instance/fair_division.db "SELECT name FROM sqlite_master WHERE type='table';"
-sqlite3 instance/fair_division.db "SELECT COUNT(*) FROM user;"
-sqlite3 instance/fair_division.db "SELECT COUNT(*) FROM survey;"
-sqlite3 instance/fair_division.db "SELECT COUNT(*) FROM item_ranking;"
-# repeat for any other tables
-```
-
-Row counts should match. If they don't, restore from backup and investigate before retrying.
-
-### Step 7: Switch the app to MySQL
-
-Set the environment variables from the [Environment Variables](#environment-variables) section and start the app. The `DevelopmentConfig` (SQLite) is only loaded when `FLASK_ENV` is unset or `development`; `ProductionConfig` (MySQL) is loaded when `FLASK_ENV=production`.
+Set the environment variables from the [Environment Variables](#environment-variables) section and start the app. If it loads and you can log in with your existing account, the migration succeeded.
 
 ---
 
@@ -169,35 +129,24 @@ Set the environment variables from the [Environment Variables](#environment-vari
 
 These are handled automatically, but good to know if something unexpected happens.
 
-### BOOLEAN columns → TINYINT(1)
-
-SQLite stores booleans as integers (`0`/`1`). MySQL represents them as `TINYINT(1)`. SQLAlchemy maps both to Python `bool` transparently — no action needed.
-
 ### Foreign key enforcement
 
-SQLite defines foreign keys but does **not** enforce them by default. MySQL (InnoDB) **does** enforce them. If your SQLite data has any orphaned rows (e.g., a `survey_participant` row pointing to a deleted `user`), the import will fail with a foreign key constraint error.
+SQLite defines foreign keys but does **not** enforce them. MySQL does. If your SQLite data has orphaned rows (e.g., a `survey_participant` pointing to a deleted `user`), the import will fail with a foreign key constraint error.
 
-Fix: identify and delete orphaned rows in SQLite before migrating, then re-run the import.
+Fix: find and delete the orphaned rows in SQLite before importing:
 
 ```bash
-# Example: find orphaned survey_participant rows
 sqlite3 instance/fair_division.db \
   "SELECT * FROM survey_participant WHERE user_id NOT IN (SELECT id FROM user);"
 ```
 
 ### Case sensitivity on Linux
 
-MySQL on Linux is **case-sensitive** for table names by default (`lower_case_table_names=0`). SQLAlchemy generates lowercase table names (`user`, `role`, `survey`, etc.), so as long as you don't hand-write queries with mixed case you'll be fine. Avoid renaming tables manually.
-
-### Datetime columns
-
-SQLite stores datetimes as plain text strings. MySQL stores them as `DATETIME`. `sqlite3-to-mysql` converts them automatically. SQLAlchemy abstracts the difference, so no app changes are needed.
+MySQL on Linux is case-sensitive for table names by default. SQLAlchemy generates all-lowercase table names, so this is fine as long as you don't write raw queries with mixed-case table names.
 
 ### Idle connection drops
 
-MySQL closes idle connections after `wait_timeout` (default: 8 hours). Without connection recycling, a Flask app that sits idle will hit `OperationalError: (2006, 'MySQL server has gone away')` on the next request.
-
-The `ProductionConfig` in this app already sets `SQLALCHEMY_POOL_RECYCLE = 3600` (recycle connections after 1 hour) to prevent this. No action needed — just be aware of why it's there.
+MySQL closes idle connections after 8 hours by default. `ProductionConfig` already sets `SQLALCHEMY_POOL_RECYCLE = 3600` to prevent the `MySQL server has gone away` error — no action needed.
 
 ---
 
@@ -208,11 +157,8 @@ The `ProductionConfig` in this app already sets `SQLALCHEMY_POOL_RECYCLE = 3600`
 | `ModuleNotFoundError: No module named 'pymysql'` | Run `pip install pymysql` |
 | `Access denied for user` | Check `DATABASE_URL` credentials and that `GRANT` was run |
 | `Unknown character set: utf8mb4` | MySQL version < 5.5.3 — use `utf8` instead |
-| Text columns truncated | Ensure the database and all tables use `utf8mb4` |
-| `INTEGER` auto-increment mismatch | After import, run `ALTER TABLE <name> AUTO_INCREMENT = <n+1>;` |
 | Foreign key constraint error during import | Find and remove orphaned rows in SQLite first (see above) |
-| `(2006, 'MySQL server has gone away')` | `SQLALCHEMY_POOL_RECYCLE` should prevent this — verify `FLASK_ENV=production` is set |
-| Row counts don't match after import | Restore from backup, fix any FK violations in SQLite, re-run import |
+| `MySQL server has gone away` | Verify `FLASK_ENV=production` is set so `POOL_RECYCLE` is active |
 
 ---
 
