@@ -7,18 +7,23 @@ Run with:
 Open http://localhost:8089 to use the web UI, or add --headless -u <users> -r <rate> -t <time>.
 
 User classes (pick via --class-picker in the web UI or --users on the CLI):
-  - LoginCycleUser    : simple  – measures login/logout performance
-  - BrowseUser        : simple  – anonymous home page browsing
-  - AuthBrowseUser    : medium  – logged-in user browses survey pages
-  - SurveyFlowUser    : complex – full moderator+participant lifecycle per user
-  - AlgorithmLoadUser : complex – algorithm execution under concurrent load
-                                  WARNING: each run is CPU-intensive and can take
-                                  several seconds. Keep user count low (2-5).
+  - LoginCycleUser          : simple  – measures login/logout performance
+  - BrowseUser              : simple  – anonymous home page browsing
+  - AuthBrowseUser          : medium  – logged-in user browses survey pages
+  - SurveyFlowUser          : complex – full moderator+participant lifecycle per user
+  - AlgorithmLoadUser       : complex – algorithm execution under concurrent load
+                                        WARNING: CPU-intensive, keep user count low (2-5).
+  - ConcurrentParticipantUser: complex – many participants ranking the same survey simultaneously
+                                        Most realistic production scenario.
+                                        Each virtual user self-registers and joins a shared survey
+                                        created at test start and deleted at test stop.
 """
 
 import re
+import uuid
 import random
-from locust import HttpUser, task, between
+import requests as _requests
+from locust import HttpUser, task, between, events
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +54,88 @@ def _extract_invite_code(html):
     """Parse invite code from the survey edit page."""
     match = re.search(r"/join/([^\"]+)\"", html)
     return match.group(1) if match else None
+
+
+# ---------------------------------------------------------------------------
+# Shared survey state for ConcurrentParticipantUser
+# Set by @events.test_start, read by each virtual user in on_start.
+# ---------------------------------------------------------------------------
+
+_shared_survey_id = None
+_shared_invite_code = None
+
+
+@events.test_start.add_listener
+def create_shared_survey(environment, **kwargs):
+    """
+    Runs once before any virtual user spawns.
+    Admin creates one survey with items and opens it.
+    All ConcurrentParticipantUser instances will join this survey.
+    """
+    global _shared_survey_id, _shared_invite_code
+
+    host = environment.host
+    session = _requests.Session()
+
+    # Login as admin
+    r = session.get(f"{host}/login")
+    csrf = _extract_csrf(r.text)
+    session.post(f"{host}/login", data={
+        "email": ADMIN_EMAIL,
+        "password": ADMIN_PASSWORD,
+        "csrf_token": csrf,
+        "remember": "false",
+    })
+
+    # Create the shared survey
+    r = session.post(f"{host}/surveys/create", data={
+        "title": "Concurrent Participant Load Test",
+        "description": "Shared survey created by locust",
+        "category": "fair_division",
+        "ranking_mode": "ordinal",
+    }, allow_redirects=False)
+    survey_id = _extract_survey_id(r)
+    if not survey_id:
+        print("[locust] ERROR: could not create shared survey — ConcurrentParticipantUser will be skipped")
+        return
+    _shared_survey_id = survey_id
+
+    # Add items
+    for name in ITEMS:
+        session.post(f"{host}/surveys/{survey_id}/items/add", data={"name": name},
+                     headers={"X-Requested-With": "XMLHttpRequest"})
+
+    # Open survey
+    session.post(f"{host}/surveys/{survey_id}/toggle", allow_redirects=False)
+
+    # Get the invite code from the edit page
+    r = session.get(f"{host}/surveys/{survey_id}")
+    _shared_invite_code = _extract_invite_code(r.text)
+
+    session.get(f"{host}/logout")
+    print(f"[locust] Shared survey created: id={survey_id}, invite={_shared_invite_code}")
+
+
+@events.test_stop.add_listener
+def delete_shared_survey(environment, **kwargs):
+    """Runs once after the test ends. Admin deletes the shared survey."""
+    if not _shared_survey_id:
+        return
+
+    host = environment.host
+    session = _requests.Session()
+
+    r = session.get(f"{host}/login")
+    csrf = _extract_csrf(r.text)
+    session.post(f"{host}/login", data={
+        "email": ADMIN_EMAIL,
+        "password": ADMIN_PASSWORD,
+        "csrf_token": csrf,
+        "remember": "false",
+    })
+    session.post(f"{host}/surveys/{_shared_survey_id}/delete", allow_redirects=False)
+    session.get(f"{host}/logout")
+    print(f"[locust] Shared survey {_shared_survey_id} deleted")
 
 
 # ---------------------------------------------------------------------------
@@ -354,4 +441,87 @@ class AlgorithmLoadUser(HttpUser):
             f"/surveys/{self.survey_id}/run-algorithm",
             data={"algorithm": "round_robin"},
             name="/surveys/[id]/run-algorithm",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Level 3 continued – Concurrent participants on the same survey
+# ---------------------------------------------------------------------------
+
+class ConcurrentParticipantUser(HttpUser):
+    """
+    Many participants submitting rankings to the same survey simultaneously.
+
+    This is the most realistic production scenario: a moderator has shared an
+    invite link and many users are ranking at the same time. It stresses:
+      - concurrent writes to ItemRanking (DELETE existing + INSERT new per user)
+      - concurrent SurveyParticipant lookups
+      - database row locking under write contention
+
+    Setup (handled by @events.test_start / test_stop above):
+      A single shared survey is created before users spawn and deleted after the
+      test ends. The survey ID and invite code are stored in module-level vars.
+
+    Each virtual user:
+      on_start : self-registers with a unique email, joins the shared survey,
+                 reads item IDs from the rank page.
+      task     : submits a random ordinal ranking.
+      on_stop  : logs out.
+
+    Note: registered test accounts are left in the database after the test.
+    Clean them up manually or with a DB query:
+      DELETE FROM user WHERE email LIKE 'loadtest_%@test.com';
+
+    Run headless example (20 users, ramp 5/s, run 60s):
+        locust -f tests/locustfile.py --host=http://localhost:5032 \\
+               --headless -u 20 -r 5 -t 60s --class-picker ConcurrentParticipantUser
+    """
+    wait_time = between(1, 3)
+
+    item_ids = []
+
+    def on_start(self):
+        if not _shared_survey_id or not _shared_invite_code:
+            return
+
+        # Register a fresh unique account for this virtual user
+        self.email = f"loadtest_{uuid.uuid4().hex[:10]}@test.com"
+        self.password = "Testpass1!"
+
+        r = self.client.get("/register")
+        csrf = _extract_csrf(r.text)
+        self.client.post(
+            "/register",
+            data={
+                "email": self.email,
+                "password": self.password,
+                "csrf_token": csrf,
+            },
+            allow_redirects=True,
+        )
+
+        # Join the shared survey via invite link
+        self.client.get(f"/join/{_shared_invite_code}", allow_redirects=True)
+
+        # Read item IDs from the rank page so we can build valid form data
+        r = self.client.get(
+            f"/surveys/{_shared_survey_id}/rank",
+            name="/surveys/[id]/rank [GET]",
+        )
+        self.item_ids = [int(i) for i in re.findall(r'name="rank_(\d+)"', r.text)]
+
+    def on_stop(self):
+        self.client.get("/logout")
+
+    @task
+    def submit_rankings(self):
+        if not _shared_survey_id or not self.item_ids:
+            return
+        shuffled = self.item_ids[:]
+        random.shuffle(shuffled)
+        data = {f"rank_{item_id}": rank + 1 for rank, item_id in enumerate(shuffled)}
+        self.client.post(
+            f"/surveys/{_shared_survey_id}/rank",
+            data=data,
+            name="/surveys/[id]/rank [POST]",
         )
