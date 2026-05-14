@@ -103,7 +103,24 @@ pip install sqlite3-to-mysql
 
 Follow the [MySQL Server Setup](#mysql-server-setup) section above if you haven't already.
 
-### Step 4: Export and import in one command
+### Step 4: Create the schema via SQLAlchemy
+
+This is the important step. Do **not** let `sqlite3-to-mysql` create the tables — it would derive the schema from SQLite's DDL, which uses looser types and no FK enforcement. Instead, let SQLAlchemy create the tables directly from your models so the schema is exactly correct (proper column types, indexes, foreign key constraints).
+
+```bash
+FLASK_ENV=production flask shell
+```
+
+```python
+from app import app, db
+with app.app_context():
+    db.create_all()
+exit()
+```
+
+### Step 5: Copy only the data (no schema)
+
+Now use `sqlite3-to-mysql` with `--without-tables` so it only inserts rows into the tables SQLAlchemy already created:
 
 ```bash
 sqlite3mysql \
@@ -113,12 +130,13 @@ sqlite3mysql \
   --mysql-port 3306 \
   --mysql-user fd_user \
   --mysql-password strong-password-here \
-  --mysql-charset utf8mb4
+  --mysql-charset utf8mb4 \
+  --without-tables
 ```
 
-This creates all tables and copies all rows. Foreign key checks are disabled during import and re-enabled afterward, so ordering is not an issue.
+Foreign key checks are disabled during import and re-enabled afterward, so row ordering is not an issue.
 
-### Step 5: Verify the migration
+### Step 6: Verify the migration
 
 Connect to MySQL and spot-check row counts:
 
@@ -141,7 +159,7 @@ sqlite3 instance/fair_division.db "SELECT COUNT(*) FROM item_ranking;"
 
 Row counts should match. If they don't, restore from backup and investigate before retrying.
 
-### Step 6: Switch the app to MySQL
+### Step 7: Switch the app to MySQL
 
 Set the environment variables from the [Environment Variables](#environment-variables) section and start the app. The `DevelopmentConfig` (SQLite) is only loaded when `FLASK_ENV` is unset or `development`; `ProductionConfig` (MySQL) is loaded when `FLASK_ENV=production`.
 
