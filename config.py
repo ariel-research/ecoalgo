@@ -51,6 +51,8 @@ class ProductionConfig(Config):
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
     SECRET_KEY = os.environ.get('SECRET_KEY')
     SECURITY_PASSWORD_SALT = os.environ.get('SECURITY_PASSWORD_SALT')
+    # Recycle connections before MySQL's wait_timeout (default 8h) closes them
+    SQLALCHEMY_POOL_RECYCLE = 3600
 
 
 config = {
