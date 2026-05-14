@@ -50,6 +50,12 @@ def _extract_survey_id(response):
     return int(match.group(1)) if match else None
 
 
+def _get_csrf(client, url):
+    """GET a page and return its CSRF token. Used before any state-changing POST."""
+    r = client.get(url, name=f"{url} [CSRF fetch]")
+    return _extract_csrf(r.text)
+
+
 def _extract_invite_code(html):
     """Parse invite code from the survey edit page."""
     match = re.search(r"/join/([^\"]+)\"", html)
@@ -88,11 +94,14 @@ def create_shared_survey(environment, **kwargs):
     })
 
     # Create the shared survey
+    r = session.get(f"{host}/surveys/create")
+    csrf = _extract_csrf(r.text)
     r = session.post(f"{host}/surveys/create", data={
         "title": "Concurrent Participant Load Test",
         "description": "Shared survey created by locust",
         "category": "fair_division",
         "ranking_mode": "ordinal",
+        "csrf_token": csrf,
     }, allow_redirects=False)
     survey_id = _extract_survey_id(r)
     if not survey_id:
@@ -100,13 +109,15 @@ def create_shared_survey(environment, **kwargs):
         return
     _shared_survey_id = survey_id
 
-    # Add items
+    # Add items (JSON endpoint, no CSRF needed)
     for name in ITEMS:
         session.post(f"{host}/surveys/{survey_id}/items/add", data={"name": name},
                      headers={"X-Requested-With": "XMLHttpRequest"})
 
     # Open survey
-    session.post(f"{host}/surveys/{survey_id}/toggle", allow_redirects=False)
+    r = session.get(f"{host}/surveys/{survey_id}")
+    csrf = _extract_csrf(r.text)
+    session.post(f"{host}/surveys/{survey_id}/toggle", data={"csrf_token": csrf}, allow_redirects=False)
 
     # Get the invite code from the edit page
     r = session.get(f"{host}/surveys/{survey_id}")
@@ -133,7 +144,9 @@ def delete_shared_survey(environment, **kwargs):
         "csrf_token": csrf,
         "remember": "false",
     })
-    session.post(f"{host}/surveys/{_shared_survey_id}/delete", allow_redirects=False)
+    r = session.get(f"{host}/surveys/{_shared_survey_id}")
+    csrf = _extract_csrf(r.text)
+    session.post(f"{host}/surveys/{_shared_survey_id}/delete", data={"csrf_token": csrf}, allow_redirects=False)
     session.get(f"{host}/logout")
     print(f"[locust] Shared survey {_shared_survey_id} deleted")
 
@@ -235,7 +248,6 @@ class SurveyFlowUser(HttpUser):
     on_stop   : delete the survey, log out.
 
     Each Locust user owns its own survey to avoid write conflicts between users.
-    No CSRF tokens are needed for these routes (WTF_CSRF_CHECK_DEFAULT = False).
     """
     wait_time = between(1, 3)
 
@@ -257,7 +269,8 @@ class SurveyFlowUser(HttpUser):
             allow_redirects=True,
         )
 
-        # --- Create survey ---
+        # --- Create survey (fetch page first to get CSRF token) ---
+        csrf = _get_csrf(self.client, "/surveys/create")
         response = self.client.post(
             "/surveys/create",
             data={
@@ -265,6 +278,7 @@ class SurveyFlowUser(HttpUser):
                 "description": "Created by locust",
                 "category": "fair_division",
                 "ranking_mode": "ordinal",
+                "csrf_token": csrf,
             },
             allow_redirects=False,
         )
@@ -272,7 +286,7 @@ class SurveyFlowUser(HttpUser):
         if not self.survey_id:
             return
 
-        # --- Add items ---
+        # --- Add items (JSON endpoint, no CSRF needed) ---
         self.item_ids = []
         for name in ITEMS:
             r = self.client.post(
@@ -285,8 +299,10 @@ class SurveyFlowUser(HttpUser):
                 self.item_ids.append(data["item_id"])
 
         # --- Open survey ---
+        csrf = _get_csrf(self.client, f"/surveys/{self.survey_id}")
         self.client.post(
             f"/surveys/{self.survey_id}/toggle",
+            data={"csrf_token": csrf},
             allow_redirects=False,
         )
 
@@ -298,8 +314,10 @@ class SurveyFlowUser(HttpUser):
 
     def on_stop(self):
         if self.survey_id:
+            csrf = _get_csrf(self.client, f"/surveys/{self.survey_id}")
             self.client.post(
                 f"/surveys/{self.survey_id}/delete",
+                data={"csrf_token": csrf},
                 allow_redirects=False,
             )
         self.client.get("/logout")
@@ -380,6 +398,7 @@ class AlgorithmLoadUser(HttpUser):
         )
 
         # --- Create survey ---
+        csrf = _get_csrf(self.client, "/surveys/create")
         response = self.client.post(
             "/surveys/create",
             data={
@@ -387,6 +406,7 @@ class AlgorithmLoadUser(HttpUser):
                 "description": "Created by locust AlgorithmLoadUser",
                 "category": "fair_division",
                 "ranking_mode": "ordinal",
+                "csrf_token": csrf,
             },
             allow_redirects=False,
         )
@@ -394,7 +414,7 @@ class AlgorithmLoadUser(HttpUser):
         if not self.survey_id:
             return
 
-        # --- Add items ---
+        # --- Add items (JSON endpoint, no CSRF needed) ---
         self.item_ids = []
         for name in ITEMS:
             r = self.client.post(
@@ -407,8 +427,10 @@ class AlgorithmLoadUser(HttpUser):
                 self.item_ids.append(data["item_id"])
 
         # --- Open survey ---
+        csrf = _get_csrf(self.client, f"/surveys/{self.survey_id}")
         self.client.post(
             f"/surveys/{self.survey_id}/toggle",
+            data={"csrf_token": csrf},
             allow_redirects=False,
         )
 
@@ -427,8 +449,10 @@ class AlgorithmLoadUser(HttpUser):
 
     def on_stop(self):
         if self.survey_id:
+            csrf = _get_csrf(self.client, f"/surveys/{self.survey_id}")
             self.client.post(
                 f"/surveys/{self.survey_id}/delete",
+                data={"csrf_token": csrf},
                 allow_redirects=False,
             )
         self.client.get("/logout")
