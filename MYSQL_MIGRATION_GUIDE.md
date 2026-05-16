@@ -8,7 +8,7 @@ This guide covers two paths:
 
 ## Prerequisites
 
-Install the MySQL Python driver:
+**On your production server** (bash terminal):
 
 ```bash
 pip install pymysql
@@ -24,13 +24,15 @@ PyMySQL
 
 ## MySQL Server Setup
 
-Do this once before either path. Connect to MySQL as root:
+Do this once before either path.
+
+**On your production server** (bash terminal) — connect to MySQL as root:
 
 ```bash
 mysql -u root -p
 ```
 
-Then create the database and a dedicated app user:
+You are now in the **MySQL shell**. Run:
 
 ```sql
 CREATE DATABASE fair_division CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -42,13 +44,36 @@ GRANT ALL PRIVILEGES ON fair_division.* TO 'fd_user'@'%';
 FLUSH PRIVILEGES;
 ```
 
+Then exit the MySQL shell:
+
+```sql
+exit
+```
+
 Replace `fd_user` and `strong-password-here` with your own values. Use `'fd_user'@'localhost'` instead of `'%'` if the app and MySQL run on the same machine — it is more restrictive and preferred.
+
+**If you already created the user** and need to switch to `mysql_native_password` (required to avoid needing the `cryptography` package with MySQL 8.0+):
+
+```sql
+ALTER USER 'fd_user'@'localhost' IDENTIFIED WITH mysql_native_password BY 'your-password';
+FLUSH PRIVILEGES;
+```
+
+**If your password contains special characters** (`&`, `!`, `$`, etc.), wrap it in single quotes in `.env`:
+
+```bash
+export DB_PASSWORD='your&special!password'
+```
+
+Without quotes, bash interprets `&` as "run in background" and the variable ends up empty, causing `Access denied` errors.
 
 ---
 
 ## Environment Variables
 
-Set these on your production server before starting the app:
+The `.env` file in the project root holds all these values. Fill it in, then load it as described below.
+
+> **Note:** `FLASK_ENV=production` is required even on your dev PC to activate MySQL. `DevelopmentConfig` hardcodes SQLite, so without this the app ignores the DB variables entirely.
 
 ```bash
 export FLASK_ENV=production
@@ -60,19 +85,36 @@ export SECRET_KEY=your-strong-secret-key
 export SECURITY_PASSWORD_SALT=your-strong-salt
 ```
 
+**`SECRET_KEY` and `SECURITY_PASSWORD_SALT`:**
+
+- **Production:** generate strong random values. Run this command twice on the server (once per key) and paste the output into `.env`:
+  ```bash
+  python3 -c "import secrets; print(secrets.token_hex(32))"
+  ```
+- **Dev (your PC):** any value works, e.g., `dev-key-123` and `dev-salt-123`.
+
 `DB_PORT` defaults to `3306` and `DB_HOST` defaults to `localhost` if not set.
+
+**Loading the variables:**
+
+- **Production server:** add each `export` line to your shell profile (e.g., `~/.bashrc`, `~/.profile`) or your process manager config (e.g., a `systemd` unit file) so they persist across reboots and SSH sessions.
+- **Dev (your PC):** run `source .env` in your terminal before starting the app. The `.env` file is already in the project root — just fill in the values and source it each session (or add `source /path/to/project/.env` to `~/.bashrc`).
 
 ---
 
 ## Path A — Fresh MySQL Database
 
-Set the environment variables above and run the app. On startup it automatically calls `db.create_all()`, creates default roles, the admin user, and system dummies — no manual steps needed.
+Set the environment variables above and start the app on your production server. On startup it automatically calls `db.create_all()`, creates default roles, the admin user, and system dummies — no manual steps needed.
 
 ---
 
 ## Path B — Export SQLite → Import into MySQL
 
+All steps below run **on your production server** (bash terminal) unless otherwise noted.
+
 ### Step 1: Back up your SQLite file
+
+**On your production server** (bash terminal):
 
 ```bash
 cp instance/fair_division.db instance/fair_division.db.bak
@@ -86,27 +128,15 @@ No writes should happen during migration. Stop your Flask process before continu
 
 ### Step 3: Install the migration tool
 
+**On your production server** (bash terminal):
+
 ```bash
 pip install sqlite3-to-mysql
 ```
 
-### Step 4: Create the schema via SQLAlchemy
+### Step 4: Copy the data
 
-Do **not** let `sqlite3-to-mysql` create the tables — it derives the schema from SQLite's loose DDL and the result won't match what SQLAlchemy expects. Instead, run just `db.create_all()` via Flask shell so the schema is created directly from your models:
-
-```bash
-FLASK_ENV=production flask shell
-```
-
-```python
-from app import db
-db.create_all()
-exit()
-```
-
-We use `flask shell` instead of running the app here because running the app would also create default roles, admin user, and system dummies — which would conflict with the data being imported from SQLite.
-
-### Step 5: Copy the data
+**On your production server** (bash terminal) — make sure the environment variables are set so `$DB_NAME`, `$DB_HOST`, etc. expand correctly:
 
 ```bash
 sqlite3mysql \
@@ -117,14 +147,14 @@ sqlite3mysql \
   --mysql-user $DB_USER \
   --mysql-password $DB_PASSWORD \
   --mysql-charset utf8mb4 \
-  --without-tables
+  --without-foreign-keys
 ```
 
-`--without-tables` tells the tool to only insert rows, not recreate the schema. Foreign key checks are disabled during import and re-enabled afterward.
+`sqlite3mysql` creates the tables and inserts all rows. `--without-foreign-keys` disables foreign key checks during import so rows can be inserted in any order without constraint errors. When the app first starts after import, `run_migrations()` adds any columns that SQLAlchemy models have but the SQLite schema didn't capture.
 
-### Step 6: Start the app
+### Step 5: Start the app
 
-Set the environment variables from the [Environment Variables](#environment-variables) section and start the app. If it loads and you can log in with your existing account, the migration succeeded.
+**On your production server** (bash terminal) — make sure the environment variables are set, then start the app. If it loads and you can log in with your existing account, the migration succeeded.
 
 ---
 
@@ -136,7 +166,7 @@ These are handled automatically, but good to know if something unexpected happen
 
 SQLite defines foreign keys but does **not** enforce them. MySQL does. If your SQLite data has orphaned rows (e.g., a `survey_participant` pointing to a deleted `user`), the import will fail with a foreign key constraint error.
 
-Fix: find and delete the orphaned rows in SQLite before importing:
+Fix: find and delete the orphaned rows in SQLite **before** importing. **On your production server** (bash terminal):
 
 ```bash
 sqlite3 instance/fair_division.db \
@@ -157,19 +187,22 @@ MySQL closes idle connections after 8 hours by default. `ProductionConfig` alrea
 
 | Problem | Fix |
 |---|---|
-| `ModuleNotFoundError: No module named 'pymysql'` | Run `pip install pymysql` |
-| `Access denied for user` | Check `DATABASE_URL` credentials and that `GRANT` was run |
+| `ModuleNotFoundError: No module named 'pymysql'` | Run `pip install pymysql` on the production server |
+| `Access denied for user` | Check credentials in your environment variables and that `GRANT` was run in the MySQL shell. If your password has special characters (`&`, `!`, `$`), wrap it in single quotes in `.env`: `export DB_PASSWORD='pass&word'` |
 | `Unknown character set: utf8mb4` | MySQL version < 5.5.3 — use `utf8` instead |
 | Foreign key constraint error during import | Find and remove orphaned rows in SQLite first (see above) |
 | `MySQL server has gone away` | Verify `FLASK_ENV=production` is set so `POOL_RECYCLE` is active |
+| `$DB_NAME` not expanding in Step 4 | Make sure you ran the `export` commands (or `source .env`) in the same terminal session |
+| `RuntimeError: 'cryptography' package is required` | MySQL 8.0+ uses `caching_sha2_password` by default. Switch the user to native password in the MySQL shell: `ALTER USER 'fd_user'@'localhost' IDENTIFIED WITH mysql_native_password BY 'your-password'; FLUSH PRIVILEGES;` |
 
 ---
 
 ## Keeping Both Environments
 
-| Environment | `FLASK_ENV` value | Database |
-|---|---|---|
-| Local development | `development` (or unset) | `instance/fair_division.db` (SQLite) |
-| Production | `production` | MySQL via `DATABASE_URL` |
+| Environment | `FLASK_ENV` value | Database | Load env vars via |
+|---|---|---|---|
+| Local dev (normal) | `development` (or unset) | `instance/fair_division.db` (SQLite) | nothing needed |
+| Local dev (testing MySQL) | `production` | MySQL (local) | `source .env` in terminal |
+| Production server | `production` | MySQL | shell profile or `systemd` unit |
 
 No code changes are needed when switching — only the environment variable changes.

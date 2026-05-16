@@ -1601,6 +1601,8 @@ def my_surveys():
 
 def run_migrations():
     """Apply any schema changes that db.create_all() won't handle (ALTER TABLE)."""
+    from sqlalchemy import inspect as sa_inspect
+    inspector = sa_inspect(db.engine)
     with db.engine.connect() as conn:
         for table, column, col_type in [
             ('allocation_result', 'category',          'VARCHAR(50)'),
@@ -1608,7 +1610,7 @@ def run_migrations():
             ('survey',            'use_item_weights',  'BOOLEAN DEFAULT 0'),
             ('user',              'is_system_dummy',   'BOOLEAN DEFAULT 0'),
         ]:
-            cols = [row[1] for row in conn.execute(db.text(f"PRAGMA table_info({table})"))]
+            cols = [col['name'] for col in inspector.get_columns(table)]
             if column not in cols:
                 conn.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
                 conn.commit()
